@@ -10,7 +10,8 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest]
+        # macOS leg dropped: hosted macOS runners cannot start on this org's plan; mac checks run locally (rasande-knowledge#264).
+        os: [ubuntu-latest]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -23,12 +24,6 @@ jobs:
           if ! command -v tmux; then
             sudo apt-get update
             sudo apt-get install -y tmux
-          fi
-      - name: Install tmux (macOS)
-        if: runner.os == 'macOS'
-        run: |
-          if ! command -v tmux; then
-            brew install tmux
           fi
       - run: npm run typecheck
       - name: Run tests
