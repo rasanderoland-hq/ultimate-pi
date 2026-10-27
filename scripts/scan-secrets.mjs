@@ -99,7 +99,17 @@ function scanGitHistory(hits) {
   if (!hasHistory()) return;
   // Scan messages and patches separately. The default `commit <sha>` metadata
   // is a public hash, not a secret, and must not mask secret-shaped diff text.
-  scanText("git history (commit messages)", git(["log", "--format=%B", "--all"]), hits);
+  // On pull_request runs actions/checkout creates a synthetic merge commit
+  // (GITHUB_SHA) whose message is "Merge <head-sha> into <base-sha>": two
+  // public commit ids that would trip "Bare 40+ hex" on every PR. Skip only
+  // that one generated message; every real commit message is still scanned.
+  const syntheticMerge = process.env.GITHUB_EVENT_NAME === "pull_request" ? process.env.GITHUB_SHA ?? "" : "";
+  const messages = git(["log", "--format=%H%x00%B%x01", "--all"])
+    .split("\x01")
+    .filter((rec) => rec.trim() && (!syntheticMerge || rec.trim().split("\x00")[0] !== syntheticMerge))
+    .map((rec) => rec.split("\x00").slice(1).join("\x00"))
+    .join("\n");
+  scanText("git history (commit messages)", messages, hits);
   scanText("git history (patches)", git(["log", "--format=", "-p", "--all"]), hits);
 }
 
