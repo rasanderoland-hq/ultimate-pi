@@ -34,3 +34,32 @@ paths = [
   '''^\.gitleaks\.toml$''',
   '''^scripts/scan-personal\.mjs$''',
 ]
+
+# House rules (ROE-640), shared copy: rasande-knowledge templates/security/gitleaks.toml
+[[rules]]
+id = "vercel-personal-access-token"
+description = "Vercel personal access token (vcp_ prefix)"
+regex = '''\bvcp_[A-Za-z0-9_-]{20,}'''
+keywords = ["vcp_"]
+tags = ["house", "vercel", "token"]
+
+[[rules]]
+id = "context7-api-key"
+description = "Context7 API key (ctx7sk- prefix)"
+regex = '''\bctx7sk-[A-Za-z0-9-]{20,}'''
+keywords = ["ctx7sk-"]
+tags = ["house", "context7", "key"]
+
+[[rules]]
+id = "kupan-secret-key"
+description = "Kupan secret API key (kupan_sk_ prefix)"
+regex = '''\bkupan_sk_[A-Za-z0-9_-]{16,}'''
+keywords = ["kupan_sk_"]
+tags = ["house", "kupan", "key"]
+
+[[rules]]
+id = "google-oauth-client-secret"
+description = "Google OAuth client secret (GOCSPX- prefix)"
+regex = '''\bGOCSPX-[A-Za-z0-9_-]{24,}'''
+keywords = ["gocspx-"]
+tags = ["house", "google", "oauth"]
