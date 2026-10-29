@@ -1,0 +1,12 @@
+[tickets]
+store = "linear"
+key = "ROE"
+team = "ROE"
+
+[tickets.types]
+bug = "Bug"
+
+[tickets.status]
+in-progress = "Agent Working"
+review = "Agent Review"
+done = "Agent Done"
