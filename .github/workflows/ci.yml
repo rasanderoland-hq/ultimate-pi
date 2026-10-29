@@ -13,9 +13,11 @@ jobs:
         os: [ubuntu-latest, macos-latest]
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - uses: actions/setup-node@v4
         with:
-          node-version: "22.x"
+          node-version: "24"
       - run: npm ci
       - name: Install tmux (Ubuntu)
         if: runner.os == 'Linux'
@@ -32,13 +34,10 @@ jobs:
           fi
       - run: npm run typecheck
       - name: Run tests
-        # Known Node test-runner flake: test/installer-packages.test.ts spawns
-        # child processes that print the CLI's ASCII-art banner (large
-        # multi-byte stdout), which intermittently corrupts the test runner's
-        # internal IPC framing ("Unable to deserialize cloned data due to
-        # invalid or unsupported version"). Confirmed unrelated to app code:
-        # the file passes reliably in isolation and at --test-concurrency=1.
-        # Retry once rather than let an upstream runtime flake fail CI.
-        run: npm test || npm test
+        # Node 24 process isolation plus the doctor check marks corrupts the
+        # test runner IPC. scripts/run-tests.mjs keeps Node 24 in-process and
+        # Node 22 at one file at a time.
+        run: npm test
       - run: npm run scan
+      - run: npm run check:pack
       - run: npm run smoke

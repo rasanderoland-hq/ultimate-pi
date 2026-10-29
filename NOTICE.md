@@ -35,6 +35,7 @@ These remain `peerDependencies`. This package does not vendor them.
 ## Community Pi extensions (inspiration / optional install)
 
 - pi-interactive-subagents — original by HazAT ([MIT](https://github.com/HazAT/pi-interactive-subagents/blob/main/LICENSE)); tmux-only derivative maintained by Amos Blomqvist ([source](https://github.com/amosblomqvist/pi-interactive-subagents), [MIT license retaining © 2026 HazAT](https://github.com/amosblomqvist/pi-interactive-subagents/blob/main/LICENSE)).
+- The read-only `reviewer` role is inspired by the review contract in [HazAT/pi-config](https://github.com/HazAT/pi-config) (`skills/review/SKILL.md`, MIT, Copyright (c) 2026 Daniel Griesser). Ultimate Pi does not vendor that file. The profile, the JEV route, and the repair loop are original to this package. Superconductor orchestration from that repository is not included.
 - [pi-observational-memory](https://github.com/amosblomqvist/pi-observational-memory) — Amos Blomqvist, MIT.
 - [@gotgenes/pi-anthropic-auth](https://www.npmjs.com/package/@gotgenes/pi-anthropic-auth) — Chris Lasher, MIT.
 - [@schultzp2020/pi-cursor](https://www.npmjs.com/package/@schultzp2020/pi-cursor) — Paul Schultz, MIT.
@@ -42,6 +43,9 @@ These remain `peerDependencies`. This package does not vendor them.
 - [pi-lens](https://www.npmjs.com/package/pi-lens) — Apostolos Mantzaris, MIT.
 - [pi-cache-graph](https://www.npmjs.com/package/pi-cache-graph) — Arnav Gupta, MIT.
 - [pi-graft](https://www.npmjs.com/package/pi-graft) — KSonny4, MIT.
+- [@spences10/pi-themes](https://www.npmjs.com/package/@spences10/pi-themes) — Scott Spence, MIT. Supplies the default `neon-noir` theme.
+- [pi-context-view](https://www.npmjs.com/package/pi-context-view) — Dmitry, MIT. Parent-only `/context` inspection. Adds no model instructions.
+- [@lucascardozo/pi-edit-guard](https://www.npmjs.com/package/@lucascardozo/pi-edit-guard) — Lucas Ivan Cardozo, MIT. Loaded only on child agents that already have `edit` or `write`.
 
 ---
 
@@ -87,7 +91,7 @@ User-Agent is the generic `Mozilla/5.0 (compatible; ultimate-pi/1.0.0-alpha)` (n
 
 ### `extensions/web-search/`
 
-Local/custom. Google Custom Search wrapper with env aliases `GOOGLE_SEARCH_API_KEY` | `GOOGLE_API_KEY` and `GOOGLE_CSE_ID` | `GOOGLE_CUSTOM_SEARCH_ENGINE_ID`. Ships `auth.example.json` **placeholders only**. Do not copy a real `auth.json`. File-based credentials, if used, live under the agent dir (`<agentDir>/extensions/web-search/auth.json`).
+Local/custom. Tavily Search API wrapper (`POST https://api.tavily.com/search`, bearer auth) reading `TAVILY_API_KEY`. Ships `auth.example.json` **placeholders only**. Do not copy a real `auth.json`. File-based credentials, if used, live under the agent dir (`<agentDir>/extensions/web-search/auth.json`).
 
 ### `extensions/ask-user-question.ts`
 
@@ -113,7 +117,7 @@ Opt-in macOS extra, genericized from a local iTerm2 status helper. Binary path: 
 
 ### `extras/macos/completion-beep.md`
 
-Opt-in AGENTS.md snippet documenting `afplay /System/Library/Sounds/Ping.aiff`. macOS-only; not part of the default extension set.
+macOS AGENTS.md snippet documenting `afplay /System/Library/Sounds/Ping.aiff`. On darwin, install appends it outside the managed markers by default. Not part of the extension set, and not applied off macOS.
 
 ---
 

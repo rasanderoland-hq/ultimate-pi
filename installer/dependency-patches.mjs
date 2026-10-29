@@ -18,6 +18,101 @@ export const DEPENDENCY_PATCHES = Object.freeze([
     patch: "pi-cursor-idle-0.5.2.patch",
     before: "fac8964e80770c7003d1c8719c08fd834a723eb3fc4ccb1442d5ef3a57429bed",
     after: "4d05e91ce9b1de36c1289a70a40db91407bf284d93c6c9a2ae9501166dec3b24",
+    supersededBy: "954befc4e657acf7d892a525105a4d65852754223c0d581bc593d9964c597f8c",
+  },
+  {
+    name: "@schultzp2020/pi-cursor",
+    version: "0.5.2",
+    root: "npm/node_modules/@schultzp2020/pi-cursor",
+    target: "dist/proxy/main.js",
+    patch: "pi-cursor-mcp-state-0.5.2.patch",
+    before: "4d05e91ce9b1de36c1289a70a40db91407bf284d93c6c9a2ae9501166dec3b24",
+    after: "954befc4e657acf7d892a525105a4d65852754223c0d581bc593d9964c597f8c",
+  },
+  {
+    name: "@schultzp2020/pi-cursor",
+    version: "0.5.2",
+    root: "npm/node_modules/@schultzp2020/pi-cursor",
+    target: "dist/index.js",
+    patch: "pi-cursor-stale-ctx-0.5.2.patch",
+    before: "ac2b0544559910f836e627a8c292ea303492b7100174bf0ca3b30a7cab1fa900",
+    after: "180c81c74411948dfed5b41ad441416cdd172f69fbae58576bc7b3638204664d",
+  },
+  {
+    name: "pi-graft",
+    version: "0.1.2",
+    root: "npm/node_modules/pi-graft",
+    target: "extensions/graft.ts",
+    patch: "pi-graft-async-0.1.2.patch",
+    before: "663479e235ac247211f64e5d6015995d8cff04e33726fc639eaa0b1edfe5e6bb",
+    after: "11502aa5ae65d8b0a8a852c5903fe02982e812e3f1b64d3d1eb4bf458f1ec78e",
+    supersededBy: "0e80c4207393e90cd862514cc6e4ef3c5b0cf925a770f89cc2b32c7b277503a4",
+  },
+  {
+    name: "pi-graft",
+    version: "0.1.2",
+    root: "npm/node_modules/pi-graft",
+    target: "extensions/graft.ts",
+    patch: "pi-graft-subagent-task.patch",
+    before: "11502aa5ae65d8b0a8a852c5903fe02982e812e3f1b64d3d1eb4bf458f1ec78e",
+    after: "0e80c4207393e90cd862514cc6e4ef3c5b0cf925a770f89cc2b32c7b277503a4",
+    supersededBy: "0f9002d52221f57fbbcd0bf6d1f5e123f94532eed49a9e051efd0bc55cd91f51",
+  },
+  {
+    name: "pi-graft",
+    version: "0.1.2",
+    root: "npm/node_modules/pi-graft",
+    target: "extensions/graft.ts",
+    patch: "pi-graft-stale-ctx-0.1.2.patch",
+    before: "0e80c4207393e90cd862514cc6e4ef3c5b0cf925a770f89cc2b32c7b277503a4",
+    after: "0f9002d52221f57fbbcd0bf6d1f5e123f94532eed49a9e051efd0bc55cd91f51",
+    supersededBy: "db3eef0b520bebaf0afe9457e7013c431676793ea00cf20fdeb5aaf9965e4d1d",
+  },
+  {
+    name: "pi-graft",
+    version: "0.1.2",
+    root: "npm/node_modules/pi-graft",
+    target: "extensions/graft.ts",
+    patch: "pi-graft-workspace-stats-0.1.2.patch",
+    before: "0f9002d52221f57fbbcd0bf6d1f5e123f94532eed49a9e051efd0bc55cd91f51",
+    after: "db3eef0b520bebaf0afe9457e7013c431676793ea00cf20fdeb5aaf9965e4d1d",
+    supersededBy: "e3f2684791d8d44fc909d84a887f58996001307be71bb3fdb10fbead5dfc6bdb",
+  },
+  {
+    name: "pi-graft",
+    version: "0.1.2",
+    root: "npm/node_modules/pi-graft",
+    target: "extensions/graft.ts",
+    patch: "pi-graft-settled-stale-0.1.2.patch",
+    before: "db3eef0b520bebaf0afe9457e7013c431676793ea00cf20fdeb5aaf9965e4d1d",
+    after: "e3f2684791d8d44fc909d84a887f58996001307be71bb3fdb10fbead5dfc6bdb",
+  },
+  {
+    name: "observational-memory",
+    version: "0.1.0",
+    root: "git/github.com/amosblomqvist/pi-observational-memory",
+    target: "src/hooks/observer-trigger.ts",
+    patch: "pi-observational-memory-observer-stale.patch",
+    before: "0bfe292de9bfd3e95a48e7499f98401d69a07b4e4f77602f9cc27945fbd87db9",
+    after: "f45758d173508b0384447d790531d401e29374e78b5472287f081eb67a24f8c0",
+  },
+  {
+    name: "observational-memory",
+    version: "0.1.0",
+    root: "git/github.com/amosblomqvist/pi-observational-memory",
+    target: "src/hooks/consolidator-trigger.ts",
+    patch: "pi-observational-memory-consolidator-stale.patch",
+    before: "4594cd243c4a5aff2e11e057dd4b0431fd76fc1e6506c0695e57a7bc1229e121",
+    after: "766634f8364569369ef7d78012363a7aa84ac679620b8f6db9436f6dee7dd061",
+  },
+  {
+    name: "observational-memory",
+    version: "0.1.0",
+    root: "git/github.com/amosblomqvist/pi-observational-memory",
+    target: "src/hooks/compaction-trigger.ts",
+    patch: "pi-observational-memory-compaction-stale.patch",
+    before: "6d3e7abc671d8ed6d0c3706d3d74f0277e541038e35d03fadc11b2210edcf2d0",
+    after: "cb757631b32a76f4a49fe6c11d2bde41bcd6d3bd172a7857bdc5c7ca0d1f2bc7",
   },
   {
     name: "pi-interactive-subagents",
@@ -28,7 +123,44 @@ export const DEPENDENCY_PATCHES = Object.freeze([
     before: "2f8ef422f668e7e8fddfe084f37ebe6ee44865ce32c2a981a765bb6c213b2c61",
     after: "e37f908e912ade6eebfc4048e7bc71898597f89f630da9f5c2fca1dd1db45324",
   },
+  {
+    name: "pi-interactive-subagents",
+    version: "3.7.2",
+    root: "git/github.com/amosblomqvist/pi-interactive-subagents",
+    target: "pi-extension/subagents/index.ts",
+    patch: "pi-interactive-subagents-stale-ctx.patch",
+    before: "0a438726c0a9e5bd02d0b87141b41238aae7c39ac2faa4f4a96eb0f5e1ecb1a4",
+    after: "96dfdb1d722fcb6a478ccf919aae698b5f6f2fe6b770145aeca6acb21f711136",
+    supersededBy: "b27026a706942d8d48deda125833ea53871ad56f72532908dcbbe697e9de9b57",
+  },
+  {
+    name: "pi-interactive-subagents",
+    version: "3.7.2",
+    root: "git/github.com/amosblomqvist/pi-interactive-subagents",
+    target: "pi-extension/subagents/index.ts",
+    patch: "pi-interactive-subagents-global-model.patch",
+    before: "4dd93c7f05b4c8ad0c97ad3fbd92d995678edfaf2fc79aa9e24884b880ba0eb9",
+    after: "b27026a706942d8d48deda125833ea53871ad56f72532908dcbbe697e9de9b57",
+  },
 ]);
+
+/** True when this setup is installing the package the patch targets. */
+export function dependencyPatchApplies(descriptor, specs) {
+  const list = Array.isArray(specs) ? specs.map((spec) => String(spec)) : [];
+  if (descriptor.name === "pi-interactive-subagents") {
+    return list.some((spec) => spec.includes("pi-interactive-subagents"));
+  }
+  if (descriptor.name === "@schultzp2020/pi-cursor") {
+    return list.some((spec) => spec.includes("pi-cursor"));
+  }
+  if (descriptor.name === "pi-graft") {
+    return list.some((spec) => spec.includes("pi-graft"));
+  }
+  if (descriptor.name === "observational-memory") {
+    return list.some((spec) => spec.includes("pi-observational-memory"));
+  }
+  return false;
+}
 
 function inside(root, candidate) {
   const relative = path.relative(root, candidate);
@@ -62,7 +194,7 @@ export async function inspectDependencyPatch(agentDir, descriptor) {
     return { status: "skipped", reason: `expected ${descriptor.name}@${descriptor.version}; found ${manifest.name ?? "unknown"}@${manifest.version ?? "unknown"}` };
   }
   const sha256 = createHash("sha256").update(bytes).digest("hex");
-  if (sha256 === descriptor.after) return { status: "already-applied", target, sha256 };
+  if (sha256 === descriptor.after || sha256 === descriptor.supersededBy) return { status: "already-applied", target, sha256 };
   if (sha256 === descriptor.before) return { status: "ready", target, sha256 };
   return { status: "skipped", reason: `target checksum mismatch for ${descriptor.name}@${descriptor.version}` };
 }

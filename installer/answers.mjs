@@ -14,6 +14,7 @@ function defaultAnswers() {
     packages: [],
     openrouterKey: undefined,
     deepseekKey: undefined,
+    tavilyKey: undefined,
     extras: { enabledExtras: [] },
   };
 }
@@ -115,6 +116,7 @@ export async function writeAnswersTemplate(filePath) {
       planner: { provider: "anthropic", model: catalogId("anthropic", 1) },
       researcher: { provider: "openai-codex", model: catalogId("openai-codex", 0) },
       qa_tester: { provider: "cursor", model: catalogId("cursor", 0) },
+      reviewer: { provider: "anthropic", model: catalogId("anthropic", 1) },
     },
     // Top-level providerChains (not nested under fallbacks) — matches schema.mjs
     // and settings.mjs. Nested answers.fallbacks.providerChains is still accepted
@@ -131,6 +133,7 @@ export async function writeAnswersTemplate(filePath) {
     packages: [],
     openrouterKey: undefined,
     deepseekKey: undefined,
+    tavilyKey: undefined,
     extras: { enabledExtras: [] },
   };
   await fs.writeFile(filePath, `${JSON.stringify(template, null, 2)}\n`, "utf8");

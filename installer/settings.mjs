@@ -1,6 +1,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { writeFileAtomic } from "../lib/atomic-write.ts";
 import { createBackupSession } from "./backup.mjs";
 import { renderAgentTemplates } from "./render-agents.mjs";
 import {
@@ -13,6 +14,10 @@ import {
   normalizeFallbacksMap,
 } from "./schema.mjs";
 import { writeModelConfig } from "./write-model-config.mjs";
+import { applyEnabledExtras } from "./extras.mjs";
+
+/** Known-good Cursor provider. 0.5.3 fails to import `@earendil-works/pi-ai` and aborts launch. */
+export const CURSOR_PACKAGE = "npm:@schultzp2020/pi-cursor@0.5.2";
 
 const SETTINGS_FILE = "settings.json";
 const AGENTS_MD_FILE = "AGENTS.md";
@@ -41,6 +46,26 @@ async function readJson(file, fallback) {
   }
 }
 
+/** Collapse any Cursor package spec onto the pinned 0.5.2 spec. Other packages stay. */
+export function pinCursorPackageSpec(packages) {
+  if (!Array.isArray(packages)) return packages;
+  let saw = false;
+  const next = [];
+  for (const spec of packages) {
+    if (typeof spec !== "string") {
+      next.push(spec);
+      continue;
+    }
+    if (spec === "npm:@schultzp2020/pi-cursor" || spec.startsWith("npm:@schultzp2020/pi-cursor@")) {
+      saw = true;
+      continue;
+    }
+    next.push(spec);
+  }
+  if (saw && !next.includes(CURSOR_PACKAGE)) next.push(CURSOR_PACKAGE);
+  return next;
+}
+
 /** Shallow-merge arrays by de-duped union, objects recursively, scalars overwritten by `patch`. */
 function deepMergePreserving(base, patch) {
   if (Array.isArray(base) && Array.isArray(patch)) {
@@ -62,6 +87,51 @@ function deepMergePreserving(base, patch) {
 }
 
 /**
+ * Product preferences copied from the maintainer install. Applied only when
+ * the key is absent so a later setup does not stomp a theme or compaction
+ * value the user already changed. Never includes model ids or filesystem roots.
+ */
+export const PREFERENCE_DEFAULTS = {
+  theme: "neon-noir",
+  hideThinkingBlock: false,
+  compaction: {
+    enabled: true,
+    reserveTokens: 16384,
+    keepRecentTokens: 15000,
+  },
+  "graft-context": {
+    enabled: true,
+    maxHits: 4,
+    maxChars: 8000,
+    autoProvision: true,
+  },
+};
+
+/** Fill keys that are missing. Existing scalars and nested values stay put. */
+export function fillMissing(base, defaults) {
+  if (!defaults || typeof defaults !== "object" || Array.isArray(defaults)) return base;
+  const source = base && typeof base === "object" && !Array.isArray(base) ? base : {};
+  const out = { ...source };
+  for (const [key, value] of Object.entries(defaults)) {
+    if (!(key in out) || out[key] === undefined) {
+      out[key] = value;
+      continue;
+    }
+    if (
+      value &&
+      typeof value === "object" &&
+      !Array.isArray(value) &&
+      out[key] &&
+      typeof out[key] === "object" &&
+      !Array.isArray(out[key])
+    ) {
+      out[key] = fillMissing(out[key], value);
+    }
+  }
+  return out;
+}
+
+/**
  * Merge ultimate-pi's install output into <agentDir>/settings.json without
  * clobbering any existing, unrelated settings. Only touches:
  *   - packages (union of ids)
@@ -72,8 +142,33 @@ export async function mergeSettings(agentDir, patch) {
   const file = settingsPath(agentDir);
   const existing = await readJson(file, {});
   const next = deepMergePreserving(existing, patch);
+  if (Array.isArray(next.packages)) next.packages = pinCursorPackageSpec(next.packages);
   await fs.mkdir(agentDir, { recursive: true });
-  await fs.writeFile(file, `${JSON.stringify(next, null, 2)}\n`, "utf8");
+  await writeFileAtomic(file, `${JSON.stringify(next, null, 2)}\n`);
+  return next;
+}
+
+/**
+ * Write preference defaults into settings.json only for keys that are absent.
+ * `memoryInstalled` also sets observational-memory.enabledByDefault when that
+ * flag is missing. Model ids and graft managedRoots are never written here.
+ */
+export async function applyPreferenceDefaults(agentDir, { memoryInstalled = false } = {}) {
+  const file = settingsPath(agentDir);
+  const existing = await readJson(file, {});
+  let next = fillMissing(existing, PREFERENCE_DEFAULTS);
+  if (memoryInstalled) {
+    const memory =
+      next["observational-memory"] && typeof next["observational-memory"] === "object"
+        ? next["observational-memory"]
+        : {};
+    next = {
+      ...next,
+      "observational-memory": fillMissing(memory, { enabledByDefault: true }),
+    };
+  }
+  await fs.mkdir(agentDir, { recursive: true });
+  await writeFileAtomic(file, `${JSON.stringify(next, null, 2)}\n`);
   return next;
 }
 
@@ -183,8 +278,10 @@ export async function applySettings(options, allAnswers) {
     const backupSession = options.backupSession ?? createBackupSession(agentDir);
     await backupSession.backupIfExists(SETTINGS_FILE);
     await mergeSettings(agentDir, patch);
+    await applyPreferenceDefaults(agentDir, { memoryInstalled: Boolean(allAnswers.deepseekKey) });
     await backupSession.backupIfExists(AGENTS_MD_FILE);
     await applyAgentsMdBlock(agentDir, templatePath, templateData);
+    await applyEnabledExtras(agentDir, allAnswers.extras?.enabledExtras ?? []);
     modelAgents = await writeModelConfig(agentDir, providerChains, agentFallbacks, backupSession);
     agentFiles = await renderAgentTemplates(agentDir, assignments, backupSession, {
       overwriteUnmarked: options.overwriteUnmarked,

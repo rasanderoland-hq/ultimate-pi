@@ -9,11 +9,13 @@ const MODELS_BY_PROVIDER = DEFAULT_MODELS_BY_PROVIDER;
 
 // Default --yes routing when that provider was selected/authenticated this run.
 // qa_tester has no per-role preference: first selected provider's catalog entry.
+// reviewer prefers anthropic when that is not already the worker's provider.
 const PREFERRED_PROVIDER_BY_ROLE = {
   scout: "cursor",
   worker: "cursor",
   researcher: "openai-codex",
   planner: "anthropic",
+  reviewer: "anthropic",
 };
 
 function isCancelled(value) {
@@ -28,10 +30,16 @@ function configuredIds(providers) {
   return (providers ?? []).map((entry) => (typeof entry === "string" ? entry : entry.id));
 }
 
-function modelChoices(providerIds) {
+function modelsForProvider(providerId, providers) {
+  const row = (providers ?? []).find((entry) => (typeof entry === "string" ? entry : entry?.id) === providerId);
+  if (row && Array.isArray(row.models) && row.models.length > 0) return row.models;
+  return MODELS_BY_PROVIDER[providerId] ?? [];
+}
+
+function modelChoices(providerIds, providers) {
   const choices = [];
   for (const id of providerIds) {
-    const models = MODELS_BY_PROVIDER[id] ?? [];
+    const models = modelsForProvider(id, providers);
     if (models.length === 0) {
       choices.push({ value: `${id}::`, label: `${id} (custom model)` });
       continue;
@@ -55,28 +63,53 @@ function assignmentsFromAnswers(answers) {
   const out = {};
   for (const name of AGENT_NAMES) {
     const row = map[name];
-    if (!row?.provider || !row?.model) return null;
-    out[name] = { provider: row.provider, model: row.model };
+    if (row?.provider && row?.model) {
+      out[name] = { provider: row.provider, model: row.model };
+      continue;
+    }
+    // Older answers files predate reviewer. Copy the planner seat into a
+    // distinct reviewer entry so the rest of the file is not discarded.
+    if (name === "reviewer" && map.planner?.provider && map.planner?.model) {
+      out.reviewer = { provider: map.planner.provider, model: map.planner.model };
+      continue;
+    }
+    return null;
   }
   return out;
 }
 
-function firstCatalogAssignment(providerId) {
-  const models = MODELS_BY_PROVIDER[providerId] ?? [];
+function firstCatalogAssignment(providerId, providers) {
+  const models = modelsForProvider(providerId, providers);
   return { provider: providerId, model: models[0] || "default" };
 }
 
-function defaultAssignments(providerIds) {
+function reviewerDefault(providerIds, providers, workerAssignment, fallback) {
+  const selected = new Set(providerIds);
+  const workerProvider = workerAssignment?.provider;
+  if (selected.has("anthropic") && workerProvider !== "anthropic") {
+    return firstCatalogAssignment("anthropic", providers);
+  }
+  const other = providerIds.find((id) => id && id !== workerProvider);
+  if (other) return firstCatalogAssignment(other, providers);
+  if (workerAssignment?.provider && workerAssignment?.model) return { ...workerAssignment };
+  return { ...fallback };
+}
+
+function defaultAssignments(providerIds, providers) {
   const selected = new Set(providerIds);
   const fallbackProvider = providerIds[0];
   const fallback = fallbackProvider
-    ? firstCatalogAssignment(fallbackProvider)
-    : firstCatalogAssignment("anthropic");
+    ? firstCatalogAssignment(fallbackProvider, providers)
+    : firstCatalogAssignment("anthropic", providers);
   const out = {};
   for (const name of AGENT_NAMES) {
+    if (name === "reviewer") {
+      out.reviewer = reviewerDefault(providerIds, providers, out.worker, fallback);
+      continue;
+    }
     const preferred = PREFERRED_PROVIDER_BY_ROLE[name];
     if (preferred && selected.has(preferred)) {
-      out[name] = firstCatalogAssignment(preferred);
+      out[name] = firstCatalogAssignment(preferred, providers);
     } else {
       out[name] = { ...fallback };
     }
@@ -113,11 +146,12 @@ export async function assignAgentModels(options = {}, providers = []) {
 
   const providerIds = configuredIds(providers);
   if (options.yes || options.dryRun) {
-    return defaultAssignments(providerIds);
+    return defaultAssignments(providerIds, providers);
   }
 
   const choices = modelChoices(
     providerIds.length > 0 ? providerIds : Object.keys(MODELS_BY_PROVIDER),
+    providers,
   );
   const assignments = {};
   for (const name of AGENT_NAMES) {

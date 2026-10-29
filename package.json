@@ -1,11 +1,16 @@
 {
   "name": "ultimate-pi",
-  "version": "1.0.0-alpha",
+  "version": "1.2.0-alpha",
   "description": "Multi-agent routing for the Pi CLI.",
   "type": "module",
   "license": "MIT",
   "repository": "github:VisionCraft3r/ultimate-pi",
-  "keywords": ["pi-package", "pi", "ai-agents", "multi-agent"],
+  "keywords": [
+    "pi-package",
+    "pi",
+    "ai-agents",
+    "multi-agent"
+  ],
   "bin": {
     "ultimate-pi": "bin/ultimate-pi.mjs"
   },
@@ -18,16 +23,27 @@
       "./extensions/jev-sentinel.ts",
       "./extensions/quota-fallback.ts",
       "./extensions/model-agents.ts",
+      "./extensions/agent-config.ts",
       "./extensions/planner-handoff.ts",
       "./extensions/custom-header.ts",
+      "./extensions/session-chrome.ts",
       "./extensions/ask-user-question.ts",
+      "./extensions/scout-budget.ts",
+      "./extensions/qa-budget.ts",
+      "./extensions/paperclip-mirror.ts",
+      "./extensions/paperclip-subagent-hold.ts",
+      "./extensions/launch-update.ts",
+      "./extensions/wave-diff.ts",
+      "./extensions/review-trace.ts",
       "./extensions/bash-guard/index.ts",
       "./extensions/browser/index.ts",
       "./extensions/prompt-snippets/index.ts",
       "./extensions/web-fetch/index.ts",
       "./extensions/web-search/index.ts"
     ],
-    "skills": ["./skills"],
+    "skills": [
+      "./skills"
+    ],
     "prompts": []
   },
   "files": [
@@ -41,6 +57,7 @@
     "patches",
     "assets",
     "docs",
+    "scripts/check-context-budget.mjs",
     "README.md",
     "LICENSE",
     "NOTICE.md"
@@ -55,20 +72,23 @@
     "unpdf": "^1.4.0"
   },
   "peerDependencies": {
-    "@earendil-works/pi-agent-core": "*",
-    "@earendil-works/pi-ai": "*",
-    "@earendil-works/pi-coding-agent": "*",
-    "@earendil-works/pi-tui": "*",
+    "@earendil-works/pi-agent-core": "^1.0.0",
+    "@earendil-works/pi-ai": "^1.0.0",
+    "@earendil-works/pi-coding-agent": "^1.0.0",
+    "@earendil-works/pi-tui": "^1.0.0",
     "typebox": "*"
   },
   "devDependencies": {
-    "typescript": "^5.7.2",
-    "@types/node": "^22.10.0"
+    "@types/node": "^22.10.0",
+    "ajv": "^8.20.0",
+    "typescript": "^5.7.2"
   },
   "scripts": {
-    "test": "node --experimental-strip-types --test test/*.test.ts",
+    "test": "node scripts/run-tests.mjs",
     "typecheck": "tsc --noEmit",
-    "scan": "node scripts/scan-secrets.mjs && node scripts/scan-personal.mjs",
+    "scan": "node scripts/scan-secrets.mjs && node scripts/scan-personal.mjs && node scripts/check-context-budget.mjs",
+    "check:pack": "node scripts/check-pack.mjs",
+    "measure:startup": "node scripts/measure-startup.mjs",
     "smoke": "node scripts/smoke-install.mjs"
   }
 }

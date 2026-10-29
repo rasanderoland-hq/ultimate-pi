@@ -1,10 +1,10 @@
 # Architecture
 
-Ultimate Pi sits on top of the [Pi coding agent](https://pi.dev). The main Pi session is the **orchestrator**. Incoming work is classified, then either answered in place or fanned out to a five-role subagent team. Each subagent runs in its own [tmux](https://github.com/tmux/tmux) pane via [`pi-interactive-subagents`](https://github.com/AmosIBoukir/pi-interactive-subagents) (HazAT's original plus Amos Blomqvist's tmux-only fork). See [NOTICE.md](../NOTICE.md) for attribution.
+Ultimate Pi sits on top of the [Pi coding agent](https://pi.dev). The main Pi session is the **orchestrator**. Incoming work is classified, then either answered in place or fanned out to a six-role subagent team. Each subagent runs in its own [tmux](https://github.com/tmux/tmux) pane via [`pi-interactive-subagents`](https://github.com/AmosIBoukir/pi-interactive-subagents) (HazAT's original plus Amos Blomqvist's tmux-only fork). See [NOTICE.md](../NOTICE.md) for attribution. The session rules users actually follow are in [improvements.md](./improvements.md); each extension is in [extensions.md](./extensions.md).
 
 This page covers four pieces that work together:
 
-1. JEV routing and the five agent roles
+1. JEV routing and the six agent roles
 2. Tool allowlisting (and the few extensions that re-inject into child sessions)
 3. Cross-provider 429 / quota fallback
 4. Planner spec handoff before workers fan out
@@ -17,10 +17,11 @@ For provider setup see [docs/providers.md](./providers.md). For JEV itself see [
 user → orchestrator (main session)
         → jev_triage
             → tier_0      answer in the main session (no subagent)
-            → tier_1      one worker
-            → tier_2      scout, then worker
-            → tier_3      planner → spec-ready review → workers
+            → tier_1      one worker, then Verification: tests | scout | browser | reviewer
+            → tier_2      scout, then worker, then the same Verification line
+            → tier_3      planner → spec-ready review → workers → the same Verification line
             → tier_4_qa   qa_tester (live browser/UI)
+            → tier_5_review reviewer (code or project audit)
             → researcher  spawned when the orchestrator needs external docs
 ```
 
@@ -29,13 +30,14 @@ Every request hits `jev_triage` first. The classifier returns a tier; the orches
 | Agent | Typical trigger | Job |
 |---|---|---|
 | *(main / orchestrator)* | `tier_0`, or coordinating any other tier | Talks to the user, launches roles, reviews planner specs |
-| `scout` | `tier_2` | Fast multi-file search and structure mapping |
+| `scout` | `tier_2` | Fast multi-file search and structure mapping. Stops after 20 tool rounds |
 | `worker` | `tier_1`, after scout (`tier_2`), after planner handoff (`tier_3`) | Writes code, runs builds/tests |
 | `planner` | `tier_3` | Architecture breakdowns; emits a spec via `handoff_spec` |
 | `researcher` | orchestrator decision (external docs / web) | Web research, third-party docs |
 | `qa_tester` | `tier_4_qa` | Drives a live browser/UI |
+| `reviewer` | `Verification: reviewer` after a worker wave, or `tier_5_review` | Read-only verdict. Own model. No writes |
 
-`tier_4_qa` is composed from a UI-likelihood threshold (`noul ≥ 0.75`) and a confidence threshold (`≥ 0.7`). Low-confidence results (below 70% for `tier_3` / `tier_4_qa`, below 50% otherwise) are flagged rather than treated as a hard route. Without an OpenRouter key, triage falls back to a local keyword heuristic and prints `⚠ JEV not configured`.
+`tier_4_qa` is composed from a UI-likelihood threshold (`noul ≥ 0.75`) and a confidence threshold (`≥ 0.7`). `tier_5_review` is a separate `is_code_review` noul with the same thresholds. Low-confidence results (below 70% for `tier_3` / `tier_4_qa` / `tier_5_review`, below 50% otherwise) are flagged rather than treated as a hard route. Without an OpenRouter key, triage falls back to a local keyword heuristic and prints `⚠ JEV not configured`.
 
 ## Diagram
 
@@ -52,7 +54,9 @@ flowchart TB
     P -->|handoff_spec + .ask park| O
     O -->|spec-ready review| W
     J -->|tier_4_qa live UI| Q[qa_tester]
+    J -->|tier_5_review audit| Rev[reviewer]
     O -->|external docs needed| R[researcher]
+    W -.->|"Verification: reviewer"| Rev
 
     subgraph tmux ["tmux panes via pi-interactive-subagents"]
         S
@@ -60,10 +64,15 @@ flowchart TB
         P
         R
         Q
+        Rev
     end
 ```
 
-Each of `scout`, `worker`, `planner`, `researcher`, and `qa_tester` gets its own tmux pane. The orchestrator stays in the original session and talks to those panes; it does not share a process with them.
+At most three worker panes run at once. The reviewer does not count toward that cap. Each of `scout`, `worker`, `planner`, `researcher`, `qa_tester`, and `reviewer` gets its own tmux pane. The orchestrator stays in the original session and talks to those panes; it does not share a process with them.
+
+Scout launches with `extensions/scout-budget.ts` and without pi-lens. A tool round is one assistant message that contains tool calls. Round 20 still runs, then scout has one chance to return the file and line map, and a 21st round is blocked. Scout keeps `graft_find_code` and `graft_repo_map`. Worker and planner keep the full tool lists. Worker is not capped. Child thinking levels use `--thinking` and are not glued onto the model id. `/agents` writes `model:` and `thinking:` on the next spawn; a running pane keeps the model it started with.
+
+Background processes left by an allowed bash command are recorded under `<agentDir>/jobs`. `/jobs kill <pid>` stops a recorded pid and its children. Worker can start those processes. qa_tester can kill them and cannot start them. The parent session can do both.
 
 ## Tool allowlisting
 
@@ -82,7 +91,7 @@ Everything else stays off unless the profile named it. That is the allowlisting 
 
 1. **`agentFallbacks[<agent>]`** — per-role override. The orchestrator is keyed as `main`.
 2. **`fallbacks[<provider>]`** — global per-provider chain.
-3. **Derived default** — a chain built from the providers that are actually configured.
+3. **Derived default** — a chain built from the providers that are actually configured. Skipped when `enabledModels` or the session scoped-model list is non-empty. In that case a written hop is used only if its `provider/id` is in the list.
 4. **None** — no fallback; the miss is logged once and the error surfaces.
 
 Example shape:
@@ -108,7 +117,7 @@ On a 429 for a `worker` using Anthropic, that file would try `agentFallbacks.wor
 
 1. `jev_triage` routes the request to `planner`.
 2. The planner works in its own tmux pane and, when the breakdown is ready, calls the **`handoff_spec`** tool instead of starting implementation itself.
-3. `handoff_spec` parks the planner with a **`.ask` silent-park watchdog**: the pane stays alive but does not keep generating, so the spec cannot be overwritten while the orchestrator reads it.
+3. `handoff_spec` opens the spec in the Plannotator browser and waits for approval, then parks the planner with a **`.ask` silent-park watchdog**: the pane stays alive but does not keep generating, so the spec cannot be overwritten while the orchestrator reads it. `UNATTENDED_MODE=true` skips the browser.
 4. The orchestrator reviews the spec ("spec-ready"). If it is incomplete, the planner is resumed. If it is ready, the orchestrator fans out one or more `worker` panes against that spec.
 
 Workers never see a half-written plan. The watchdog is what keeps the planner from talking over the review.

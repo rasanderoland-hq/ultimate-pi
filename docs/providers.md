@@ -65,7 +65,7 @@ OAuth via [`@schultzp2020/pi-cursor`](https://www.npmjs.com/package/@schultzp202
 
 1. Marks the provider as OAuth.
 2. Tells you to run `pi`, then `/login`, complete the Cursor login, and confirm.
-3. On apply, installs `@schultzp2020/pi-cursor` (required for Pi to expose Cursor as a provider). Run `/login` **after** that package is installed if the first attempt could not see Cursor yet.
+3. On apply, installs `@schultzp2020/pi-cursor@0.5.2` (required for Pi to expose Cursor as a provider). `0.5.3` cannot import `@earendil-works/pi-ai` and aborts launch, so settings merge rewrites any other `pi-cursor` spec to that pin. The install then patches that 0.5.2 proxy so Cursor's MCP-state probe gets the session's `mcp_pi_*` tool list instead of an empty frame. Run `/login` **after** that package is installed if the first attempt could not see Cursor yet.
 
 ## OpenRouter (`openrouter`)
 
@@ -114,6 +114,40 @@ API key for the OpenAI platform API (not the Codex OAuth provider above).
 1. Prompts for a masked API key (`API key for openai`).
 2. Merges it into `auth.json` as `openai.key`.
 
+## Local model (OpenAI-compatible)
+
+A server you run yourself: Ollama, LM Studio, vLLM, SGLang, or any other endpoint that speaks the OpenAI completions API. This is separate from **Other**, which only stores an API key and does not ask for a base URL.
+
+Pi's llama.cpp router (`/llama`) is a different path. This installer option does not start that router.
+
+**Prepare**
+
+- The server listening on an `http://` or `https://` URL. The default prompt is `http://127.0.0.1:11434/v1` (Ollama's OpenAI-compatible port).
+- A provider id slug such as `local` or `ollama`. Built-in ids (`anthropic`, `openai`, `openai-codex`, `cursor`, `openrouter`, `deepseek`, `other`) are rejected.
+- At least one model id the server actually serves, for example `qwen2.5-coder:7b`.
+
+**What `ultimate-pi install` / `ultimate-pi setup providers` does**
+
+1. Asks for the provider id, base URL, one or more model ids, and an optional API key.
+2. Merges the endpoint into `<agentDir>/models.json` as `providers.<id>` with `baseUrl`, `api` (`openai-completions` unless you set another), and `models`. Existing providers in that file are kept. The API key is not written into `models.json`.
+3. Stores the key in `auth.json` (mode `0600`). An empty key becomes the placeholder `local`, which Ollama ignores and which counts as configured so install does not demand `pi login` for that provider.
+4. Offers those model ids when you assign agent roles.
+
+`--answers` shape:
+
+```json
+{
+  "id": "ollama",
+  "authMethod": "api-key",
+  "baseUrl": "http://127.0.0.1:11434/v1",
+  "api": "openai-completions",
+  "models": ["qwen2.5-coder:7b"],
+  "credential": "local"
+}
+```
+
+`model` (a string) is accepted instead of `models` and becomes a one-element list. You can declare more than one local endpoint by repeating the object with a different `id`.
+
 ## Other (`other`)
 
 Any OpenAI-compatible provider: a provider id Pi already understands plus an API key.
@@ -130,25 +164,22 @@ Any OpenAI-compatible provider: a provider id Pi already understands plus an API
 2. Merges it into `auth.json` under the `other` id as `{ "type": "api_key", "key": "…" }`.
 3. Does not prompt for a custom base URL; configure that in Pi's own provider settings if the endpoint is not the default.
 
-## Google Custom Search (`web_search`)
+## Tavily (`web_search`)
 
-Not a model provider. The bundled `web_search` tool calls [Google Programmable Search / Custom Search JSON API](https://developers.google.com/custom-search/v1/introduction). The installer does **not** collect these credentials; set them yourself.
+Not a model provider. The bundled `web_search` tool calls the [Tavily Search API](https://docs.tavily.com/documentation/api-reference/endpoint/search).
 
 **Prepare**
 
-1. A Google Cloud API key with Custom Search API enabled.
-2. A Programmable Search Engine id.
+- A Tavily API key (`tvly-…`) from https://app.tavily.com.
 
-**Env vars** (either name in each pair works):
+Key sources, in priority order:
 
-| Role | Names |
-|---|---|
-| API key | `GOOGLE_SEARCH_API_KEY` or `GOOGLE_API_KEY` |
-| Engine id | `GOOGLE_CSE_ID` or `GOOGLE_CUSTOM_SEARCH_ENGINE_ID` |
+1. `TAVILY_API_KEY` in the environment.
+2. `<agentDir>/extensions/web-search/auth.json` with `tavily_api_key`. Copy `auth.example.json` and replace the placeholder locally; the package ships placeholders only. Never commit a real `auth.json`.
 
-Alternatively, copy `<agentDir>/extensions/web-search/auth.example.json` to `<agentDir>/extensions/web-search/auth.json` and fill the placeholders. That file is placeholders only — never commit a real `auth.json`.
+The installer offers an optional masked key prompt. `ultimate-pi setup web-search` writes the same extension-local file with mode `0600`.
 
-Without these, `web_search` errors with a missing-credentials message; `web_fetch` does not need them.
+Without this key, `web_search` errors with a missing-credentials message; `web_fetch` does not need it.
 
 ## Related
 

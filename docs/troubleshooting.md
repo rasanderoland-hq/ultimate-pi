@@ -41,9 +41,28 @@ ultimate-pi setup extras
 
 `--offline` skips the `pi --help` probe and marks the check skipped, so it will not catch a missing binary.
 
+## `Cannot find module .../dist/bundle/chunks/...` after `pi update`
+
+**Symptom:** a model call fails with `Error: Cannot find module '.../@earendil-works/pi-coding-agent/dist/bundle/chunks/anthropic-messages-XXXX.js'` (or another `chunk-XXXX.js`) right after Pi was updated.
+
+**Cause:** Pi bundles its providers into hashed chunk files. `pi update` replaces them with new names. A Pi session (or tmux pane) that was already running keeps importing the old names, which no longer exist. The install is not broken.
+
+**Fix**
+
+1. Quit every running Pi session and tmux pane (`tmux ls`), then start a new one. A new session loads the updated chunks directly.
+2. If a session must stay open, point the old chunk name at the current one. Find the current file with `ls <pi install>/dist/bundle/chunks/anthropic-messages-*.js`, then create the missing name so it re-exports it:
+
+   ```js
+   export { stream, streamSimple } from "./anthropic-messages-<current hash>.js";
+   ```
+
+3. If the error persists in a new session, clear Node's compile cache: delete the `node-compile-cache` folder under your temp directory.
+
+Run `pi update` when no session is mid-task, since Ultimate PI subagents run in their own panes and keep the old bundle until restarted.
+
 ## `tmux` is missing (subagents will not spawn)
 
-**Symptom:** `✖ tmux present — required by pi-interactive-subagents`. Scout/worker/planner/researcher/qa_tester each need their own tmux pane. Without `tmux`, the five-role team cannot launch (Windows needs WSL; native Windows is not supported).
+**Symptom:** `✖ tmux present — required by pi-interactive-subagents`. Scout/worker/planner/researcher/qa_tester/reviewer each need their own tmux pane. Without `tmux`, the six-role team cannot launch (Windows needs WSL; native Windows is not supported).
 
 **Fix**
 
@@ -123,20 +142,26 @@ An empty-looking chain usually means setup fallbacks was skipped, `--yes` left d
 3. If doctor says fallbacks reference a provider with no credentials, add that provider or remove it from the chain — a fallback id with no auth is not a fallback.
 4. One configured provider and no chain ⇒ there is nowhere to fail over. Add a second provider, then re-run fallbacks.
 
+## Reviewer profile missing
+
+**Symptom:** routing names `reviewer`, but `<agentDir>/agents/reviewer.md` does not exist.
+
+A package update does not write that profile. `ultimate-pi setup agents` or a new install renders it from the template and splices the managed `AGENTS.md` block in the same step. Until that file exists, do not spawn `reviewer`.
+
 ## Re-running installer steps
 
 | Command | What it does |
 |---|---|
 | `ultimate-pi install` | Full walkthrough (preflight → providers → agents → fallbacks → JEV → memory → extras → apply → doctor) |
 | `ultimate-pi setup providers` | Select providers and capture OAuth/keys |
-| `ultimate-pi setup agents` | Assign models to scout/worker/planner/researcher/qa_tester |
+| `ultimate-pi setup agents` | Assign models to scout/worker/planner/researcher/qa_tester/reviewer and render `agents/*.md` plus the managed `AGENTS.md` block |
 | `ultimate-pi setup fallbacks` | Per-provider 429 chains and per-agent overrides |
 | `ultimate-pi setup jev` | OpenRouter key for live JEV (else heuristic) |
 | `ultimate-pi setup memory` | Optional DeepSeek key / observational memory |
 | `ultimate-pi setup extras` | macOS-only conveniences (iTerm2 status line, completion beep); a no-op on other platforms. Optional packages are installed during install / JEV / memory setup, not here. |
 | `ultimate-pi doctor` | Self-check only |
 | `ultimate-pi uninstall` | Removes the managed AGENTS.md block, marked agent profiles, and the Ultimate Pi self package. Does **not** delete `auth.json`, `model-agents.json`, third-party packages, or backups. |
-| `ultimate-pi uninstall --full` / `--purge` | Also removes `model-agents.json` and third-party packages Ultimate Pi installed (pi-lens, pi-graft, pi-interactive-subagents, plannotator, pi-cache-graph, and related). Never deletes `auth.json`. Prints remaining backup paths so you can delete them manually. |
+| `ultimate-pi uninstall --full` / `--purge` | Also removes `model-agents.json` and third-party packages Ultimate Pi installed (pi-lens, pi-graft, `@spences10/pi-themes`, pi-context-view, `@lucascardozo/pi-edit-guard`, pi-interactive-subagents, plannotator, pi-cache-graph, and related). Never deletes `auth.json`. Prints remaining backup paths so you can delete them manually. |
 
 Writes to existing files take a timestamped backup first. API keys are never printed.
 

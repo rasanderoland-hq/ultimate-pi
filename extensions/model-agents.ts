@@ -13,15 +13,11 @@ import {
   AGENT_NAMES,
   type AgentName,
   FALLBACK_PROVIDERS,
-  appendEnabledModel,
   cursorScanAvailable,
   formatChain,
   formatNewModels,
   listConfiguredProviders,
-  orderModelRefs,
-  pickerLabel,
   readAgentModel,
-  readEnabledModels,
   resolveFallbackChain,
   scanCursorModels,
   splitModelRef,
@@ -29,40 +25,7 @@ import {
   writeAgentModel,
   writeFallbackChain,
 } from "../lib/model-agents.ts";
-
-function scopedRefs(ctx: ExtensionContext): string[] {
-  const seen = new Set<string>();
-  const out: string[] = [];
-  const fromSession = (ctx.scopedModels ?? []).map((scoped) => `${scoped.model.provider}/${scoped.model.id}`);
-  for (const ref of [...readEnabledModels(), ...fromSession]) {
-    const key = ref.toLowerCase();
-    if (seen.has(key)) continue;
-    seen.add(key);
-    out.push(ref);
-  }
-  return out;
-}
-
-function availableRefs(ctx: ExtensionContext): string[] {
-  const models = [
-    ...(ctx.modelRegistry.getAvailable?.() ?? []),
-    ...(ctx.modelRegistry.getAll?.() ?? []),
-  ];
-  return models.map((model) => `${model.provider}/${model.id}`);
-}
-
-async function pickModel(ctx: ExtensionContext, title: string): Promise<string | undefined> {
-  const ordered = orderModelRefs(scopedRefs(ctx), availableRefs(ctx));
-  if (ordered.length === 0) {
-    ctx.ui.notify("No models in the registry. Reload after providers are configured.", "warning");
-    return undefined;
-  }
-  const labels = ordered.map((entry) => pickerLabel(entry.ref, entry.scoped));
-  const choice = await ctx.ui.select(title, labels);
-  if (!choice) return undefined;
-  const index = labels.indexOf(choice);
-  return index >= 0 ? ordered[index]?.ref : undefined;
-}
+import { pickModel } from "../lib/model-picker.ts";
 
 async function assignAgent(ctx: ExtensionContext): Promise<void> {
   const rows = AGENT_NAMES.map((agent) => {
@@ -143,22 +106,27 @@ async function runScan(ctx: ExtensionContext, force: boolean): Promise<void> {
     if (force) ctx.ui.notify("Cursor proxy unreachable — model list unchanged.", "warning");
     return;
   }
+  const missingNote = result.missing.length
+    ? ` Assigned but not in the catalog: ${result.missing.join(", ")}. Reload after the proxy registers them.`
+    : "";
   if (result.added.length === 0) {
-    if (force) ctx.ui.notify(`Cursor catalog is current (${result.total} models).`, "info");
+    if (force || result.missing.length > 0) {
+      ctx.ui.notify(`Cursor catalog is current (${result.total} models).${missingNote}`, result.missing.length ? "warning" : "info");
+    }
     return;
   }
-  ctx.ui.notify(`Cursor: ${result.added.length} new — ${formatNewModels(result.added)}`, "info");
+  ctx.ui.notify(`Cursor: ${result.added.length} new — ${formatNewModels(result.added)}${missingNote}`, "info");
 }
 
 export default function modelAgents(pi: ExtensionAPI) {
-  pi.on("session_start", async (_event, ctx) => {
+  pi.on("session_start", (_event, ctx) => {
     if (process.env.PI_SUBAGENT_AGENT || Number(process.env.PI_SUBAGENT_DEPTH ?? "0") >= 1) return;
     if (!cursorScanAvailable()) return;
-    try {
-      await runScan(ctx, false);
-    } catch {
+    // Do not return this promise. Pi awaits session_start, and the catalog
+    // POST can sit until its 30s timeout. /ModelAgents "Scan now" still awaits.
+    void runScan(ctx, false).catch(() => {
       // proxy or disk trouble must not block startup; next session retries
-    }
+    });
   });
 
   pi.registerCommand("ModelAgents", {

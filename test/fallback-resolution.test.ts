@@ -8,8 +8,8 @@ import { join } from "node:path";
 const scratch = mkdtempSync(join(tmpdir(), "upi-fallback-"));
 process.env.PI_CODING_AGENT_DIR = scratch;
 
-const { resolveFallbackChain } = await import("../lib/model-agents.ts");
-const { deriveDefaultChains } = await import("../lib/quota-fallback.ts");
+const { missingCursorRefs, pidIsRunning, resolveFallbackChain, resolveScopedSwitchChain } = await import("../lib/model-agents.ts");
+const { deriveDefaultChains, isQuota429, quotaSignalFromMessage } = await import("../lib/quota-fallback.ts");
 
 const ASSIGNMENTS = join(scratch, "model-agents.json");
 
@@ -67,6 +67,66 @@ test("returns [] when nothing matches", () => {
 	});
 	assert.deepEqual(resolveFallbackChain("anthropic", {}, "worker"), []);
 	assert.deepEqual(resolveFallbackChain("unknown", DEFAULTS), []);
+});
+
+test("scoped switch ignores derived defaults and models outside the scope", () => {
+	writeAssignments({
+		fallbacks: {
+			anthropic: [
+				{ provider: "cursor", id: "cursor-grok-4.6-medium" },
+				{ provider: "openai", id: "not-scoped" },
+			],
+		},
+	});
+	const scoped = ["cursor/cursor-grok-4.6-medium", "anthropic/claude-sonnet-5"];
+	assert.deepEqual(resolveScopedSwitchChain("anthropic", DEFAULTS, "worker", scoped), [
+		{ provider: "cursor", id: "cursor-grok-4.6-medium" },
+	]);
+	writeAssignments({});
+	assert.deepEqual(resolveScopedSwitchChain("anthropic", DEFAULTS, "worker", []), DEFAULT_CHAIN);
+	assert.deepEqual(resolveScopedSwitchChain("anthropic", DEFAULTS, "worker", scoped), []);
+});
+
+test("a Cursor connect resource_exhausted is not a quota signal", () => {
+	const text = "[Error: Connect error resource_exhausted: Error (retries exhausted)]";
+	assert.equal(isQuota429(undefined, text), false);
+	assert.equal(isQuota429(undefined, "retry failed after 3 attempts"), false);
+	assert.equal(
+		quotaSignalFromMessage({
+			role: "assistant",
+			stopReason: "stop",
+			content: [{ type: "text", text: `\n${text}` }],
+		}),
+		"",
+	);
+	assert.equal(isQuota429(429, ""), true);
+	assert.equal(isQuota429(undefined, "rate_limit_error"), true);
+	assert.equal(isQuota429(undefined, "You have exceeded your account's rate limit."), true);
+	assert.equal(
+		isQuota429(undefined, '400 {"type":"error","error":{"message":"Third-party apps now draw from your extra usage, not your plan limits."}}'),
+		true,
+	);
+	assert.equal(
+		quotaSignalFromMessage({
+			role: "assistant",
+			content: [{ type: "text", text: `The handler mentions resource_exhausted in a long explanation. ${"x".repeat(500)}` }],
+		}),
+		"",
+	);
+});
+
+test("assigned cursor refs missing from the catalog are reported", () => {
+	const catalog = ["grok-4.7", "composer-2.5"];
+	assert.deepEqual(missingCursorRefs(catalog, ["cursor/grok-4.7", "anthropic/claude-opus-5-5"]), []);
+	assert.deepEqual(missingCursorRefs(catalog, ["cursor/cursor-grok-4.6-medium", "cursor/grok-4.7"]), [
+		"cursor/cursor-grok-4.6-medium",
+	]);
+});
+
+test("the current process counts as a live proxy pid", () => {
+	assert.equal(pidIsRunning(process.pid), true);
+	assert.equal(pidIsRunning(0), false);
+	assert.equal(pidIsRunning(2_147_483_646), false);
 });
 
 test("deriveDefaultChains produces a chain that excludes the provider itself", () => {

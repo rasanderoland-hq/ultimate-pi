@@ -7,10 +7,14 @@ import { collectProviders, yesModeAuthError } from "./providers.mjs";
 import { assignAgentModels } from "./agents.mjs";
 import { configureFallbacks } from "./fallbacks.mjs";
 import { configurePackagesAndKeys } from "./packages.mjs";
+import { configureWebSearchKey } from "./web-search-key.mjs";
 import { mergeCredentials, readAuth } from "./auth-store.mjs";
+import { mergeModelsJson } from "./models-json.mjs";
 import { applySettings } from "./settings.mjs";
-import { configureExtras } from "./extras.mjs";
+import { recordSourceRoot } from "./launch-state.mjs";
+import { applyEnabledExtras, configureExtras } from "./extras.mjs";
 import { doctor } from "./doctor.mjs";
+import { runBashCheck } from "./bash-check.mjs";
 import { loadAnswers as loadAnswersFile } from "./answers.mjs";
 import { bindAgentDir } from "./pi-runtime.mjs";
 import { loadInstalledState } from "./load-installed-state.mjs";
@@ -50,7 +54,7 @@ async function welcome(options) {
   }
   log(
     options,
-    `Will configure agent dir: ${options.agentDir}\nWrites: auth.json, settings.json, agents/, AGENTS.md, model-agents.json (timestamped backups first).`,
+    `Will configure agent dir: ${options.agentDir}\nWrites: auth.json, models.json, settings.json, agents/, AGENTS.md, model-agents.json (timestamped backups first).`,
   );
 }
 
@@ -78,6 +82,7 @@ export async function install(rawOptions) {
   const agentAssignments = await assignAgentModels(options, providers);
   const { providerChains, agentFallbacks } = await configureFallbacks(options, providers, agentAssignments);
   const { keys, jev, memory, packages } = await configurePackagesAndKeys(options, providers, agentAssignments);
+  const webSearch = await configureWebSearchKey(options);
   const { enabledExtras } = await configureExtras(options);
 
   const allProviders = [...providers, ...keys];
@@ -85,7 +90,9 @@ export async function install(rawOptions) {
   const deepseekKey = keys.find((k) => k.id === "deepseek")?.credential;
 
   if (!options.dryRun) {
+    const backupSession = options.backupSession ?? createBackupSession(options.agentDir);
     await mergeCredentials(options.agentDir, allProviders);
+    await mergeModelsJson(options.agentDir, providers, backupSession);
   }
 
   const allAnswers = {
@@ -99,10 +106,12 @@ export async function install(rawOptions) {
     extras: { enabledExtras },
   };
   await applySettings(options, allAnswers);
+  if (!options.dryRun) await recordSourceRoot(options.agentDir, REPO_ROOT);
 
   log(options, "");
   log(options, `JEV: ${jev?.mode === "openrouter" ? "configured (OpenRouter)" : "heuristic fallback mode"}`);
   log(options, `Observational memory: ${memory?.enabled ? "configured (DeepSeek)" : "not installed"}`);
+  log(options, `Web search (Tavily): ${webSearch.configured ? "configured" : "not configured"}`);
   log(options, `macOS extras enabled: ${enabledExtras.length ? enabledExtras.join(", ") : "(none)"}`);
 
   if (!options.dryRun) {
@@ -113,11 +122,11 @@ export async function install(rawOptions) {
     }
   }
 
-  log(options, "\nInstall complete. Re-run any step with: ultimate-pi setup <providers|agents|fallbacks|jev|memory|extras>");
+  log(options, "\nInstall complete. Re-run any step with: ultimate-pi setup <providers|agents|fallbacks|jev|memory|web-search|extras>");
   return 0;
 }
 
-const SETUP_TOPICS = new Set(["providers", "agents", "fallbacks", "jev", "memory", "extras"]);
+const SETUP_TOPICS = new Set(["providers", "agents", "fallbacks", "jev", "memory", "web-search", "extras"]);
 
 export async function setup(rawOptions) {
   const options = await resolveOptions(rawOptions);
@@ -129,8 +138,14 @@ export async function setup(rawOptions) {
   const { providers } = await collectProviders(options);
 
   switch (options.setupTopic) {
-    case "providers":
-      break; // collectProviders() above already did the work
+    case "providers": {
+      if (!options.dryRun) {
+        const backupSession = options.backupSession ?? createBackupSession(options.agentDir);
+        await mergeCredentials(options.agentDir, providers);
+        await mergeModelsJson(options.agentDir, providers, backupSession);
+      }
+      break;
+    }
     case "agents": {
       const installed = await loadInstalledState(options.agentDir);
       const agentAssignments = await assignAgentModels(options, providers);
@@ -179,8 +194,15 @@ export async function setup(rawOptions) {
       void packages;
       break;
     }
+    case "web-search": {
+      const r = await configureWebSearchKey(options, { force: true });
+      log(options, `Web search (Tavily): ${r.configured ? "configured" : "not configured"}`);
+      break;
+    }
     case "extras": {
-      await configureExtras(options);
+      const { enabledExtras } = await configureExtras(options);
+      if (!options.dryRun) await applyEnabledExtras(options.agentDir, enabledExtras);
+      log(options, `macOS extras enabled: ${enabledExtras.length ? enabledExtras.join(", ") : "(none)"}`);
       break;
     }
   }
@@ -303,6 +325,8 @@ export async function dispatch(options) {
       return setup(options);
     case "doctor":
       return runDoctor(options);
+    case "bash-check":
+      return runBashCheck(options);
     case "uninstall":
       return uninstall(options);
     default:

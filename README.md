@@ -23,10 +23,10 @@
 
 Ultimate Pi is a batteries-included configuration and extension pack for the
 [Pi coding agent](https://pi.dev) by Mario Zechner ([earendil-works/pi](https://github.com/earendil-works/pi)).
-It wires up tiered task routing, a five-role subagent team, tool allowlisting,
+It wires up tiered task routing, a six-role subagent team, tool allowlisting,
 cross-provider rate-limit fallback, and a handful of quality-of-life
 extensions (bash safety guard, browser QA tools, web fetch/search, prompt
-snippets, required pi-lens/graft code intelligence, and optional memory/cache)
+snippets, required pi-lens/graft code intelligence, parent-only context view, edit-guard on editing agents, and optional memory/cache)
 into one installable package.
 
 **Ultimate Pi is not affiliated with Anthropic, OpenAI, Cursor, OpenRouter,
@@ -35,16 +35,20 @@ third party. See [NOTICE.md](./NOTICE.md) for full attribution.
 
 ## Features
 
-- **JEV tiered routing** — every request is classified into `tier_0`…`tier_4_qa`
+- **JEV tiered routing** — every request is classified into `tier_0`…`tier_5_review`
   so cheap/local work stays in the main session and complex work fans out.
-- **Five-role subagent team** — `scout`, `worker`, `planner`, `researcher`,
-  `qa_tester`, each with its own tool allowlist and model.
+- **Six-role subagent team** — `scout`, `worker`, `planner`, `researcher`,
+  `qa_tester`, and `reviewer`, each with its own tool allowlist and a model
+  you assign at install. See [docs/improvements.md](./docs/improvements.md)
+  and [docs/extensions.md](./docs/extensions.md).
 - **Tool allowlisting** — subagents launch with `--no-extensions` and an
   explicit `--tools` allowlist; nothing is inherited by accident.
 - **Cross-provider 429 fallback** — configurable per-provider and per-agent
-  fallback chains so a quota hit on one provider fails over automatically.
-- **Planner spec handoff** — a `handoff_spec` tool and `.ask` silent-park
-  watchdog for spec-ready plan review.
+  fallback chains so a real quota hit on one provider fails over automatically.
+  A Cursor connect `resource_exhausted` does not count. When `enabledModels`
+  or the session scoped-model list is set, hops stay inside that list.
+- **Planner spec handoff** — `handoff_spec` opens the spec in the Plannotator
+  browser, then parks with the `.ask` silent-park watchdog.
 - **bash-guard** — a safety net around destructive shell commands, including
   a catastrophic-operation floor that applies even when the interactive guard
   is disabled.
@@ -92,12 +96,13 @@ rollback:
   depends on `tmux`).
 - Node.js `>=22.19.0`, `git`, `tmux`.
 - At least one configured model provider (Anthropic, OpenAI Codex, Cursor,
-  OpenRouter, DeepSeek, OpenAI, or another OpenAI-compatible provider).
+  OpenRouter, DeepSeek, OpenAI, another API-key provider, or a local
+  OpenAI-compatible server).
 - Browser/QA tools (`qa_tester`, `browser_*`) need Chromium installed separately:
   `npx playwright-core install chromium`. See
   [extensions/browser/README.md](./extensions/browser/README.md) for details.
 - Optional: an OpenRouter API key (for JEV routing), a DeepSeek API key (for
-  observational memory), a Google Custom Search key/CSE id (for `web_search`),
+  observational memory), a Tavily API key (for `web_search`),
   and `python3` / `yt-dlp` (for the bundled skills).
 
 ## Quick start
@@ -125,19 +130,20 @@ Re-run any step later, non-interactively with `--yes`, or fully scripted with
 1. **Preflight** — checks Node, `pi` on `PATH`, `tmux`, platform, and the
    target agent directory.
 2. **Providers** — select and authenticate one or more model providers
-   (OAuth via Pi's `/login`, or a masked API-key prompt).
-3. **Agent models** — assign a primary model to each of the five agent roles.
+   (OAuth via Pi's `/login`, a masked API-key prompt, or a local
+   OpenAI-compatible endpoint: base URL and model ids in `models.json`).
+3. **Agent models** — assign a primary model to each of the six agent roles.
 4. **Fallbacks** — configure global per-provider 429 chains and optional
    per-agent overrides.
 5. **JEV** (optional) — an OpenRouter key for tiered routing; skippable, with
    a local heuristic fallback if you skip it.
 6. **Observational memory** (optional) — a DeepSeek key to enable a lightweight
    session observer/consolidator.
-7. **Packages** — required pi-lens and pi-graft; optional plannotator and pi-cache-graph.
-8. **Apply** — installs packages, merges `settings.json` and `auth.json`
-   (with timestamped backups), and splices the routing doc into `AGENTS.md`
-   between marker comments.
-9. **macOS extras** (optional, darwin only) — completion beep, iTerm2 status line.
+7. **Packages** — required pi-lens, pi-graft, `@spences10/pi-themes`, pi-context-view, and `@lucascardozo/pi-edit-guard`; optional plannotator (spec review) and pi-cache-graph. Preference defaults (theme, compaction, graft limits) fill only when those keys are unset. A separate question asks whether to install the BMAD bridge (`git:github.com/VisionCraft3r/ultimate-pi-bmad`). The default is no, and `--yes` does not select it.
+8. **Apply** — installs packages, merges `settings.json`, `auth.json`, and
+   (for a local endpoint) `models.json`, with timestamped backups, and splices
+   the routing doc into `AGENTS.md` between marker comments.
+9. **macOS extras** (darwin only) — completion beep is on by default; iTerm2 status line stays opt-in.
 10. **Doctor** — a self-check summarizing what's configured and what still
     needs attention.
 
@@ -154,7 +160,8 @@ echoed, logged, or passed on the command line.
 | `openrouter` | API key | also used for JEV |
 | `deepseek` | API key | also used for observational memory |
 | `openai` | API key | |
-| `other` | API key | any OpenAI-compatible provider id |
+| `other` | API key | a Pi provider id plus a key; no base URL |
+| local endpoint | optional API key | OpenAI-compatible server in `models.json` (Ollama, LM Studio, vLLM). llama.cpp `/llama` stays a Pi command |
 
 See [docs/providers.md](./docs/providers.md) for a per-provider walkthrough.
 
@@ -162,14 +169,26 @@ See [docs/providers.md](./docs/providers.md) for a per-provider walkthrough.
 
 | Agent | Role |
 |---|---|
-| `scout` | fast multi-file search and structure mapping |
+| `scout` | fast multi-file search and structure mapping; 20 tool rounds, then the file and line map |
 | `worker` | writes code, runs builds/tests |
-| `planner` | architecture breakdowns, spec-ready handoff |
+| `planner` | architecture breakdowns; `handoff_spec` opens the spec in Plannotator |
 | `researcher` | web research, external docs |
 | `qa_tester` | drives a live browser/UI |
+| `reviewer` | read-only verdict when triage says `Verification: reviewer`, and on a code or project audit |
 
-Change assignments any time with `ultimate-pi setup agents` or the in-Pi
-`/ModelAgents` command.
+Ultimate Pi does not install a video-ad role. A profile already at
+`agents/video-ads.md` is left in place. The next `ultimate-pi setup agents`
+rewrites the managed routing block and stops assigning that role.
+
+pi-lens is not attached to scout. Scout keeps `graft_find_code` and
+`graft_repo_map`. Its session-start and turn-end notes are not written into
+scout's prompt. Worker and planner keep the full tool lists. Worker has no
+tool-round ceiling.
+
+Change a role's model or thinking level with the in-Pi `/agents` command.
+That writes `agents/<name>.md` and applies the next time that role is spawned.
+`/ModelAgents` still edits 429 fallback chains. `ultimate-pi setup agents`
+re-renders the managed profiles from installer answers.
 
 ### Fallback models
 
@@ -190,8 +209,10 @@ Ultimate Pi configures two layers of rate-limit fallback, stored in
 
 Resolution order on a 429: `agentFallbacks[<agent>]` (or `main` for the
 orchestrator) → `fallbacks[<provider>]` → a derived default chain across
-configured providers → no fallback (logged once). Re-run this step any time
-with `ultimate-pi setup fallbacks`.
+configured providers → no fallback (logged once). When `enabledModels` or the
+session scoped-model list is non-empty, the derived default is skipped and a
+written hop is used only if that `provider/id` is in the list. Re-run this
+step any time with `ultimate-pi setup fallbacks`.
 
 ## JEV routing
 
@@ -205,11 +226,14 @@ request into a tier before deciding how to handle it:
 | `tier_2` | needs a location scout first — `scout` then `worker` |
 | `tier_3` | new subsystem or architecture — `planner` |
 | `tier_4_qa` | needs a live browser/UI — `qa_tester` |
+| `tier_5_review` | read-only code or project audit — `reviewer` |
 
 `tier_4_qa` is composed from a UI-likelihood threshold (`noul ≥ 0.75`) and a
-confidence threshold (`≥ 0.7`). Results below 70% confidence for
-`tier_3`/`tier_4_qa`, or below 50% for other tiers, are treated as low
-confidence and flagged.
+confidence threshold (`≥ 0.7`). `tier_5_review` is a separate code-review
+noul with the same thresholds, so the word "review" does not steal a fix or
+a plan. Results below 70% confidence for `tier_3`/`tier_4_qa`/`tier_5_review`,
+or below 50% for other tiers, are treated as low confidence and flagged.
+Implementation tiers follow the triage `Verification:` line. `tests` stops at the worker's check. `scout` and `browser` are the other checks. `reviewer` is the only one that spawns the code reviewer.
 
 JEV itself is **[Jev](https://openrouter.ai/typesafe/jev-1.13)**, a proprietary
 System One decision model by [TypeSafe AI](https://typesafe.ai/), accessed via
@@ -218,8 +242,9 @@ in this repository and is not covered by Ultimate Pi's MIT license — you bring
 your own OpenRouter API key with access to the model. Without a key, JEV falls
 back to a local keyword heuristic and prints a visible
 `⚠ JEV not configured` warning. Override the model/endpoint with
-`ULTIMATE_PI_JEV_MODEL` / `ULTIMATE_PI_JEV_ENDPOINT`. See
-[docs/jev.md](./docs/jev.md) for details.
+`ULTIMATE_PI_JEV_MODEL` / `ULTIMATE_PI_JEV_ENDPOINT`. A live call gives up after
+`ULTIMATE_PI_JEV_TIMEOUT_MS` (default 8 seconds) and falls through to the
+heuristic. See [docs/jev.md](./docs/jev.md) for details.
 
 ## Architecture overview
 
@@ -232,24 +257,29 @@ flowchart LR
     J -->|tier_2| S[scout] --> W
     J -->|tier_3| P[planner] --> W
     J -->|tier_4_qa| Q[qa_tester]
+    J -->|tier_5_review| Rev[reviewer]
+    W -.->|"Verification: reviewer"| Rev
     W --> T[tmux pane]
     S --> T
     P --> T
     Q --> T
+    Rev --> T
 ```
 
 Subagents launch with `--no-extensions` and an explicit `--tools` allowlist
 from their agent profile, so no tool is inherited by accident; a handful of
 extensions (like `jev_sentinel`) re-inject themselves into child sessions via
 `registerToolExtension`. Quota-fallback listens for 429s and switches models
-mid-session using the fallback chains above. See
+mid-session using the fallback chains above, staying inside an enabled-model
+list when one is set. `handoff_spec` waits for Plannotator approval before
+the parent sees the spec. See
 [docs/architecture.md](./docs/architecture.md) for the full picture.
 
 ## Commands
 
 ```
 ultimate-pi [install] [flags]
-ultimate-pi setup <providers|agents|fallbacks|jev|memory|extras> [flags]
+ultimate-pi setup <providers|agents|fallbacks|jev|memory|web-search|extras> [flags]
 ultimate-pi doctor [flags]
 ultimate-pi uninstall [flags]
 
@@ -267,9 +297,30 @@ Flags:
   -h, --help           Show this help
 ```
 
-In-Pi commands: `/ModelAgents` (edit agent models and fallback chains),
-`/bash-guard`, `/browser`, `/snippets`, `/builtin-header`, and `/cache` /
-`/om` if those optional packages are installed.
+In-Pi commands: `/agents` (list every agent and change its model or thinking
+level; applies on the next spawn), `/ModelAgents` (edit fallback chains and
+rescan Cursor models),
+`/bash-guard`, `/jobs` (list background pids; `/jobs kill <pid>` stops a
+recorded pid and its children), `/context` (parent session), `/browser`,
+`/snippets`, `/builtin-header`, and `/cache` / `/om` if those optional
+packages are installed.
+
+After the prompt is up, `launch-update` looks for an Ultimate Pi checkout to
+sync, in order: `ULTIMATE_PI_ROOT`, the `sourceRoot` that `ultimate-pi
+install` recorded in `<agentDir>/ultimate-pi-launch.json` when it ran from a
+git checkout, then this package's own install directory. It copies the
+checkout into the agent dir only after that checkout's tests pass. Patch and
+minor npm updates that stay on known pins are reported as notes by default;
+set `ULTIMATE_PI_AUTO_UPDATE=1` to actually install them. Version checks run
+four at a time. Installs stay one at a time. Major bumps stay put. Playwright
+and the HTML/PDF converters load on first use, not at startup. The daily
+Cursor catalog scan does not hold the prompt. `/ModelAgents` "Scan now" still
+waits for it.
+
+The `web_fetch` tool refuses to fetch loopback, private, link-local, CGNAT,
+and multicast addresses, including after redirects (it follows up to 5). The
+`r.jina.ai` reader fallback, which sends the target URL to a third party, only
+runs when `ULTIMATE_PI_WEB_FETCH_JINA=1` is set.
 
 ## Security & privacy
 
@@ -290,7 +341,7 @@ Ultimate Pi builds on [Pi](https://pi.dev) (Mario Zechner / earendil-works,
 MIT) and a number of community packages: `pi-interactive-subagents`,
 `pi-observational-memory`, `@gotgenes/pi-anthropic-auth`,
 `@schultzp2020/pi-cursor`, `@plannotator/pi-extension`, `pi-lens`,
-`pi-cache-graph`, and `pi-graft`, plus JEV (TypeSafe AI, via OpenRouter). Full
+`pi-cache-graph`, `pi-graft`, `@spences10/pi-themes`, `pi-context-view`, and `@lucascardozo/pi-edit-guard`, plus JEV (TypeSafe AI, via OpenRouter). Full
 detail, licenses, and copyright notices are in [NOTICE.md](./NOTICE.md).
 
 Thanks to [Eero Alvar](https://www.youtube.com/@EeroAlvar) for the Pi content
@@ -299,8 +350,9 @@ and inspiration that helped shape this project.
 ## Contributing
 
 See [CONTRIBUTING.md](./CONTRIBUTING.md) for dev setup, running
-`npm test` / `npm run scan`, and commit conventions. Never commit API keys or
-`auth.json`.
+`npm test` / `npm run scan`, and commit conventions. `npm run measure:startup`
+times extension import and `session_start` without calling a model or the
+network. Never commit API keys or `auth.json`.
 
 ## License
 

@@ -4,8 +4,9 @@
  */
 
 import { isContinuationCrumb, normalizePrompt } from "./continuation-crumbs.ts";
+import { classifyVerification, formatVerification } from "./jev-verify.ts";
 
-export type HeuristicTier = "tier_0" | "tier_1" | "tier_2" | "tier_3" | "tier_4_qa";
+export type HeuristicTier = "tier_0" | "tier_1" | "tier_2" | "tier_3" | "tier_4_qa" | "tier_5_review";
 
 /** Visible marker so orchestrators never confuse this with a real JEV result. */
 export const HEURISTIC_UNCONFIGURED_PREFIX =
@@ -18,6 +19,8 @@ const NAMED_FILE =
 const NAMED_FN = /\b[A-Za-z_][\w]*\s*\(/;
 const UI_CONTEXT = /\b(browser|simulator|click[\s-]*through|e2e|visually\s+verify)\b/i;
 const UI_VERB = /\b(click|tap|test|verify|confirm|drive|operate|screenshot|navigate|run)\b/i;
+const REVIEW_LIKE =
+  /\b(code audit|project audit|security review|adversarial review|code review)\b|\breview (this|the) (pr|diff)\b|\baudit\b/i;
 const PLAN_LIKE =
   /\b(plan|architecture|design|spec)\b|\bnew\s+(system|subsystem|service)\b/i;
 const BUG_LIKE =
@@ -26,15 +29,16 @@ const QUESTION_LIKE =
   /^(what|why|how|where|who|which|is|are|can|should|does|do)\b|\bhow to\b|\bconfigur/;
 
 export function minConfidenceFor(choice: string): number {
-  if (choice === "tier_3" || choice === "tier_4_qa") return 70;
+  if (choice === "tier_3" || choice === "tier_4_qa" || choice === "tier_5_review") return 70;
   return 50;
 }
 
-export function formatTriageResult(choice: string, confidencePct: number): string {
+export function formatTriageResult(choice: string, confidencePct: number, prompt = ""): string {
+  const verification = formatVerification(classifyVerification(prompt, choice));
   if (confidencePct < minConfidenceFor(choice)) {
-    return `Triage Result: ${choice}. WARNING: Low confidence (${confidencePct}%). Orchestrator MUST use ask_question to verify this tier.`;
+    return `Triage Result: ${choice}. WARNING: Low confidence (${confidencePct}%). Orchestrator MUST use ask_question to verify this tier. ${verification}`;
   }
-  return `Triage Result: ${choice} (Confidence: ${confidencePct}%). Proceed with AGENTS.md routing.`;
+  return `Triage Result: ${choice} (Confidence: ${confidencePct}%). ${verification} Proceed with AGENTS.md routing.`;
 }
 
 export function classifyHeuristic(prompt: string): { tier: HeuristicTier; confidence: number } {
@@ -46,6 +50,8 @@ export function classifyHeuristic(prompt: string): { tier: HeuristicTier; confid
   if (UI_CONTEXT.test(normalized) && UI_VERB.test(normalized)) {
     return { tier: "tier_4_qa", confidence: cap };
   }
+
+  if (REVIEW_LIKE.test(normalized)) return { tier: "tier_5_review", confidence: cap };
 
   if (PLAN_LIKE.test(normalized)) return { tier: "tier_3", confidence: cap };
 
@@ -75,5 +81,5 @@ export function formatHeuristicTriage(
   const prefix = options?.unavailableReason
     ? formatUnavailablePrefix(options.unavailableReason)
     : HEURISTIC_UNCONFIGURED_PREFIX;
-  return `${prefix}\n${formatTriageResult(tier, confidence)}`;
+  return `${prefix}\n${formatTriageResult(tier, confidence, prompt)}`;
 }

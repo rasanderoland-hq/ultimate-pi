@@ -33,6 +33,9 @@ function settingsPayload() {
       SUBAGENTS,
       PUBLISHED,
       "npm:pi-cache-graph",
+      "npm:@spences10/pi-themes",
+      "npm:pi-context-view",
+      "npm:@lucascardozo/pi-edit-guard",
     ],
   };
 }
@@ -61,6 +64,9 @@ test("removeUltimatePiPackage strips checkout and published self sources, preser
       "npm:pi-graft",
       SUBAGENTS,
       "npm:pi-cache-graph",
+      "npm:@spences10/pi-themes",
+      "npm:pi-context-view",
+      "npm:@lucascardozo/pi-edit-guard",
     ]);
 
     const next = JSON.parse(await readFile(path.join(dir, "settings.json"), "utf8"));
@@ -100,6 +106,9 @@ test("removeUltimatePiPackage dry-run reports removals and writes nothing", asyn
       "npm:pi-graft",
       SUBAGENTS,
       "npm:pi-cache-graph",
+      "npm:@spences10/pi-themes",
+      "npm:pi-context-view",
+      "npm:@lucascardozo/pi-edit-guard",
     ]);
     assert.equal(await readFile(path.join(dir, "settings.json"), "utf8"), originalSettings);
     assert.equal(await readFile(path.join(dir, "auth.json"), "utf8"), AUTH_BYTES);
@@ -205,6 +214,9 @@ test("--full / --purge strips third-party packages and model-agents.json but nev
     assert.ok(result.removed.includes(PUBLISHED));
     assert.ok(result.removed.includes("npm:pi-lens"));
     assert.ok(result.removed.includes("npm:pi-graft"));
+    assert.ok(result.removed.includes("npm:@spences10/pi-themes"));
+    assert.ok(result.removed.includes("npm:pi-context-view"));
+    assert.ok(result.removed.includes("npm:@lucascardozo/pi-edit-guard"));
     assert.ok(result.removed.includes(SUBAGENTS));
     assert.ok(result.removed.includes("npm:pi-cache-graph"));
     assert.deepEqual(result.packages, []);

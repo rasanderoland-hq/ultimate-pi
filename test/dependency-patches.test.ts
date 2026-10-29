@@ -4,7 +4,7 @@ import { createHash } from "node:crypto";
 import { mkdir, mkdtemp, realpath, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { inspectDependencyPatch } from "../installer/dependency-patches.mjs";
+import { DEPENDENCY_PATCHES, dependencyPatchApplies, inspectDependencyPatch } from "../installer/dependency-patches.mjs";
 
 const BEFORE = "fixture-before\n";
 const AFTER = "fixture-after\n";
@@ -38,6 +38,56 @@ async function writeFixture(agentDir: string, { version = DESCRIPTOR.version, bo
   await writeFile(path.join(packageRoot, DESCRIPTOR.target), body);
 }
 
+test("pi-graft async patch is pinned to the published 0.1.2 preimage", () => {
+  const graft = DEPENDENCY_PATCHES.find((entry) => entry.patch === "pi-graft-async-0.1.2.patch");
+  const follow = DEPENDENCY_PATCHES.find((entry) => entry.patch === "pi-graft-subagent-task.patch");
+  const stale = DEPENDENCY_PATCHES.find((entry) => entry.patch === "pi-graft-stale-ctx-0.1.2.patch");
+  assert.ok(graft);
+  assert.ok(follow);
+  assert.ok(stale);
+  assert.equal(graft.version, "0.1.2");
+  assert.equal(graft.target, "extensions/graft.ts");
+  assert.equal(graft.before, "663479e235ac247211f64e5d6015995d8cff04e33726fc639eaa0b1edfe5e6bb");
+  assert.equal(graft.after, "11502aa5ae65d8b0a8a852c5903fe02982e812e3f1b64d3d1eb4bf458f1ec78e");
+  assert.equal(follow.before, graft.after);
+  assert.equal(follow.after, "0e80c4207393e90cd862514cc6e4ef3c5b0cf925a770f89cc2b32c7b277503a4");
+  assert.equal(graft.supersededBy, follow.after);
+  assert.equal(stale.before, follow.after);
+  assert.equal(stale.after, "0f9002d52221f57fbbcd0bf6d1f5e123f94532eed49a9e051efd0bc55cd91f51");
+  assert.equal(follow.supersededBy, stale.after);
+  assert.ok(DEPENDENCY_PATCHES.indexOf(follow) > DEPENDENCY_PATCHES.indexOf(graft));
+  assert.ok(DEPENDENCY_PATCHES.indexOf(stale) > DEPENDENCY_PATCHES.indexOf(follow));
+  const cursorIdle = DEPENDENCY_PATCHES.find((entry) => entry.patch === "pi-cursor-idle-0.5.2.patch");
+  const cursorMcp = DEPENDENCY_PATCHES.find((entry) => entry.patch === "pi-cursor-mcp-state-0.5.2.patch");
+  assert.ok(cursorIdle);
+  assert.ok(cursorMcp);
+  assert.equal(cursorIdle.target, "dist/proxy/main.js");
+  assert.equal(cursorMcp.before, cursorIdle.after);
+  assert.equal(cursorMcp.after, "954befc4e657acf7d892a525105a4d65852754223c0d581bc593d9964c597f8c");
+  assert.equal(cursorIdle.supersededBy, cursorMcp.after);
+  assert.ok(DEPENDENCY_PATCHES.indexOf(cursorMcp) > DEPENDENCY_PATCHES.indexOf(cursorIdle));
+  const cursor = DEPENDENCY_PATCHES.find((entry) => entry.patch === "pi-cursor-stale-ctx-0.5.2.patch");
+  assert.ok(cursor);
+  assert.equal(cursor.version, "0.5.2");
+  assert.equal(cursor.target, "dist/index.js");
+  assert.equal(cursor.before, "ac2b0544559910f836e627a8c292ea303492b7100174bf0ca3b30a7cab1fa900");
+  assert.equal(cursor.after, "180c81c74411948dfed5b41ad441416cdd172f69fbae58576bc7b3638204664d");
+  const subagents = DEPENDENCY_PATCHES.find((entry) => entry.patch === "pi-interactive-subagents-stale-ctx.patch");
+  assert.ok(subagents);
+  assert.equal(subagents.name, "pi-interactive-subagents");
+  assert.equal(subagents.version, "3.7.2");
+  assert.equal(subagents.target, "pi-extension/subagents/index.ts");
+  assert.equal(subagents.before, "0a438726c0a9e5bd02d0b87141b41238aae7c39ac2faa4f4a96eb0f5e1ecb1a4");
+  assert.equal(subagents.after, "96dfdb1d722fcb6a478ccf919aae698b5f6f2fe6b770145aeca6acb21f711136");
+  const globalModel = DEPENDENCY_PATCHES.find((entry) => entry.patch === "pi-interactive-subagents-global-model.patch");
+  assert.ok(globalModel);
+  assert.equal(globalModel.target, "pi-extension/subagents/index.ts");
+  assert.equal(globalModel.before, "4dd93c7f05b4c8ad0c97ad3fbd92d995678edfaf2fc79aa9e24884b880ba0eb9");
+  assert.equal(globalModel.after, "b27026a706942d8d48deda125833ea53871ad56f72532908dcbbe697e9de9b57");
+  assert.equal(subagents.supersededBy, globalModel.after);
+  assert.ok(DEPENDENCY_PATCHES.indexOf(globalModel) > DEPENDENCY_PATCHES.indexOf(subagents));
+});
+
 test("ready when target matches the before hash", async () => {
   const agentDir = await makeAgentDir();
   try {
@@ -46,6 +96,22 @@ test("ready when target matches the before hash", async () => {
     assert.equal(result.status, "ready");
     assert.equal(result.sha256, DESCRIPTOR.before);
     assert.equal(result.target, await realpath(path.join(agentDir, DESCRIPTOR.root, DESCRIPTOR.target)));
+  } finally {
+    await rm(agentDir, { recursive: true, force: true });
+  }
+});
+
+test("a follow-up post-image counts as the earlier patch already applied", async () => {
+  const agentDir = await makeAgentDir();
+  try {
+    await writeFixture(agentDir, { body: AFTER });
+    const result = await inspectDependencyPatch(agentDir, {
+      ...DESCRIPTOR,
+      after: sha256("later-after\n"),
+      supersededBy: sha256(AFTER),
+    });
+    assert.equal(result.status, "already-applied");
+    assert.equal(result.sha256, sha256(AFTER));
   } finally {
     await rm(agentDir, { recursive: true, force: true });
   }
@@ -109,4 +175,110 @@ test("skips when a package-root symlink escapes agentDir", async () => {
   } finally {
     await rm(parent, { recursive: true, force: true });
   }
+});
+
+test("dependency patches apply only to the package being installed", () => {
+  const graft = DEPENDENCY_PATCHES.find((entry) => entry.patch === "pi-graft-settled-stale-0.1.2.patch");
+  const memory = DEPENDENCY_PATCHES.find((entry) => entry.patch === "pi-observational-memory-observer-stale.patch");
+  const cursor = DEPENDENCY_PATCHES.find((entry) => entry.patch === "pi-cursor-stale-ctx-0.5.2.patch");
+  assert.ok(graft && memory && cursor);
+  assert.equal(graft.before, "db3eef0b520bebaf0afe9457e7013c431676793ea00cf20fdeb5aaf9965e4d1d");
+  assert.equal(graft.after, "e3f2684791d8d44fc909d84a887f58996001307be71bb3fdb10fbead5dfc6bdb");
+  assert.equal(dependencyPatchApplies(graft, ["npm:pi-graft"]), true);
+  assert.equal(dependencyPatchApplies(graft, ["npm:@schultzp2020/pi-cursor"]), false);
+  assert.equal(dependencyPatchApplies(memory, ["git:github.com/amosblomqvist/pi-observational-memory"]), true);
+  assert.equal(dependencyPatchApplies(memory, ["npm:pi-graft"]), false);
+  assert.equal(dependencyPatchApplies(cursor, ["npm:@schultzp2020/pi-cursor"]), true);
+  assert.equal(dependencyPatchApplies(cursor, ["npm:pi-graft"]), false);
+});
+
+test("pi-graft workspace-stats patch chains after stale-ctx and aggregates child graphs", async () => {
+  const { readFile } = await import("node:fs/promises");
+  const stale = DEPENDENCY_PATCHES.find((e) => e.patch === "pi-graft-stale-ctx-0.1.2.patch");
+  const ws = DEPENDENCY_PATCHES.find((e) => e.patch === "pi-graft-workspace-stats-0.1.2.patch");
+  assert.ok(stale && ws);
+  assert.equal(ws.before, stale.after);
+  assert.equal(stale.supersededBy, ws.after);
+  assert.ok(DEPENDENCY_PATCHES.indexOf(ws) > DEPENDENCY_PATCHES.indexOf(stale));
+  const patch = await readFile(new URL("../patches/pi-graft-workspace-stats-0.1.2.patch", import.meta.url), "utf8");
+  for (const needle of ["workspace.json", "resolveWorkspaceStats", "no graph: "]) assert.ok(patch.includes(needle), needle);
+});
+
+async function loadWorkspaceStats() {
+  const { readFile } = await import("node:fs/promises");
+  const patch = await readFile(new URL("../patches/pi-graft-workspace-stats-0.1.2.patch", import.meta.url), "utf8");
+  const added = patch.split("\n").filter((l) => l.startsWith("+") && !l.startsWith("+++")).map((l) => l.slice(1));
+  const text = added.join("\n");
+  const fnStart = text.indexOf("function workspaceChildren");
+  const fnEnd = text.indexOf("  const ws = resolveWorkspaceStats(d);");
+  const noteStart = text.indexOf("const wsInfo");
+  assert.ok(fnStart >= 0 && fnEnd > fnStart && noteStart >= 0);
+  const helpers = text.slice(fnStart, fnEnd);
+  const note = text.slice(noteStart, text.indexOf('        : "";', noteStart) + '        : "";'.length);
+  const src = `import { existsSync, readFileSync } from "node:fs";
+import { isAbsolute, join } from "node:path";
+const contextDir = (d: string) => join(d, "graft");
+const wiringPath = (d: string) => join(contextDir(d), ".graph", "wiring.json");
+function readJson<T>(p: string): T | null { try { return JSON.parse(readFileSync(p, "utf8")) as T; } catch { return null; } }
+function readWiring(d: string): any { return readJson(wiringPath(d)); }
+function emptyStats(): any { return { nodeCount: 0, edgeCount: 0, languages: [], totalCount: 0, readyCount: 0 }; }
+${helpers}
+export { resolveWorkspaceStats };
+export function noteFor(cwd: string): string {
+${note}
+  return wsNote;
+}
+`;
+  const dir = await mkdtemp(path.join(tmpdir(), "ultimate-pi-ws-"));
+  const file = path.join(dir, "ws.ts");
+  await writeFile(file, src);
+  return { dir, mod: await import(file) };
+}
+
+async function child(root: string, name: string, wiring: unknown) {
+  const g = path.join(root, name, "graft", ".graph");
+  await mkdir(g, { recursive: true });
+  if (wiring) await writeFile(path.join(g, "wiring.json"), JSON.stringify(wiring));
+}
+
+const wiring = (n: number, e: number, lang: string) => ({
+  meta: { nodeCount: n, edgeCount: e, languages: [lang] },
+  nodes: Array.from({ length: n }, (_, i) => ({ id: `n${i}`, name: "x", kind: "f", summary_state: i === 0 ? "ready" : "none" })),
+  edges: [],
+});
+
+test("workspace stats: two ready children aggregate and report N/M", async () => {
+  const { dir, mod } = await loadWorkspaceStats();
+  await mkdir(path.join(dir, "graft"), { recursive: true });
+  await writeFile(path.join(dir, "graft", "workspace.json"), JSON.stringify({ version: 1, children: ["a", "b"] }));
+  await child(dir, "a", wiring(3, 5, "typescript"));
+  await child(dir, "b", wiring(2, 1, "python"));
+  const r = mod.resolveWorkspaceStats(dir);
+  assert.equal(r.stats.nodeCount, 5);
+  assert.equal(r.stats.edgeCount, 6);
+  assert.equal(r.stats.readyCount, 2);
+  assert.deepEqual([...r.stats.languages].sort(), ["python", "typescript"]);
+  assert.equal(r.total, 2);
+  assert.deepEqual(r.missing, []);
+  assert.equal(mod.noteFor(dir), " [workspace 2/2]");
+});
+
+test("workspace stats: missing child is labeled; all missing yields null (no graph)", async () => {
+  const { dir, mod } = await loadWorkspaceStats();
+  await mkdir(path.join(dir, "graft"), { recursive: true });
+  await writeFile(path.join(dir, "graft", "workspace.json"), JSON.stringify({ children: ["a", "b"] }));
+  await child(dir, "a", wiring(3, 5, "typescript"));
+  const r = mod.resolveWorkspaceStats(dir);
+  assert.equal(r.stats.nodeCount, 3);
+  assert.deepEqual(r.missing, ["b"]);
+  assert.equal(mod.noteFor(dir), " [workspace 1/2; no graph: b]");
+  await rm(path.join(dir, "a", "graft", ".graph", "wiring.json"));
+  assert.equal(mod.resolveWorkspaceStats(dir), null);
+});
+
+test("workspace stats: ordinary repo without workspace.json is untouched", async () => {
+  const { dir, mod } = await loadWorkspaceStats();
+  await child(dir, ".", wiring(4, 4, "typescript"));
+  assert.equal(mod.resolveWorkspaceStats(dir), null);
+  assert.equal(mod.noteFor(dir), "");
 });

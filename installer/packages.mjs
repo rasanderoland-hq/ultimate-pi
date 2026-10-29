@@ -4,7 +4,11 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import * as p from "@clack/prompts";
 import { createBackupSession } from "./backup.mjs";
-import { DEPENDENCY_PATCHES, applyDependencyPatch } from "./dependency-patches.mjs";
+import { DEPENDENCY_PATCHES, applyDependencyPatch, dependencyPatchApplies } from "./dependency-patches.mjs";
+import { applyEditGuardChildGate } from "./edit-guard-child.mjs";
+import { applyScoutChildLaunch } from "./scout-child.mjs";
+import { CURSOR_PACKAGE } from "./settings.mjs";
+import { applyStaleBoundaryPatch } from "./stale-boundary.mjs";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 
@@ -13,10 +17,16 @@ const OPTIONAL_PACKAGES = [
   { value: "npm:pi-cache-graph", label: "pi-cache-graph" },
 ];
 
+/** Not in OPTIONAL_PACKAGES: --yes must not download it. */
+export const BMAD_PACKAGE = "git:github.com/VisionCraft3r/ultimate-pi-bmad";
+
 const REQUIRED_PACKAGES = [
   "git:github.com/amosblomqvist/pi-interactive-subagents@c3e8b53c0754ae5ccc19fdab5a7481ec039bc2f7",
   "npm:pi-lens",
   "npm:pi-graft",
+  "npm:@spences10/pi-themes",
+  "npm:pi-context-view",
+  "npm:@lucascardozo/pi-edit-guard",
 ];
 
 function isCancelled(value) {
@@ -220,10 +230,22 @@ export async function configurePackagesAndKeys(
     );
   }
 
+  let installBmad =
+    Array.isArray(answers.packages) && answers.packages.includes(BMAD_PACKAGE);
+  if (!Array.isArray(answers.packages) && !options.yes && !options.dryRun) {
+    installBmad = isCancelled(
+      await p.confirm({
+        message: "Install the BMAD bridge? Only if this machine uses BMAD.",
+        initialValue: false,
+      }),
+    );
+  }
+
   const packages = [selfSpec(options), ...REQUIRED_PACKAGES, ...optionalChosen];
+  if (installBmad && !packages.includes(BMAD_PACKAGE)) packages.push(BMAD_PACKAGE);
   if (deepseekKey) packages.push("git:github.com/amosblomqvist/pi-observational-memory");
   if (ids.includes("anthropic")) packages.push("npm:@gotgenes/pi-anthropic-auth");
-  if (ids.includes("cursor")) packages.push("npm:@schultzp2020/pi-cursor");
+  if (ids.includes("cursor")) packages.push(CURSOR_PACKAGE);
 
   const unique = [...new Set(packages)];
   assertGitAvailableForSpecs(unique, options);
@@ -235,10 +257,7 @@ export async function configurePackagesAndKeys(
   if (!options.offline && !options.dryRun) {
     const backupSession = options.backupSession ?? createBackupSession(options.agentDir);
     for (const descriptor of DEPENDENCY_PATCHES) {
-      const selected = descriptor.name === "pi-interactive-subagents"
-        ? unique.some((spec) => spec.startsWith("git:github.com/amosblomqvist/pi-interactive-subagents"))
-        : unique.includes("npm:@schultzp2020/pi-cursor");
-      if (!selected) continue;
+      if (!dependencyPatchApplies(descriptor, unique)) continue;
       const result = await applyDependencyPatch(options.agentDir, descriptor, backupSession, options);
       patchResults.push({ name: descriptor.name, status: result.status, reason: result.reason });
       if (result.status === "skipped") {
@@ -246,6 +265,31 @@ export async function configurePackagesAndKeys(
       } else {
         p.log.info(`Dependency patch ${descriptor.name}: ${result.status}`);
       }
+    }
+    const editGuard = await applyEditGuardChildGate(options.agentDir);
+    patchResults.push({ name: "pi-edit-guard-child", status: editGuard.status, reason: editGuard.reason });
+    if (editGuard.status === "skipped") {
+      p.log.warn(`pi-edit-guard child gate skipped: ${editGuard.reason}`);
+    } else {
+      p.log.info(`pi-edit-guard child gate: ${editGuard.status}`);
+    }
+    const staleBoundary = await applyStaleBoundaryPatch(options.agentDir);
+    const staleChanged = staleBoundary.reduce((sum, entry) => sum + entry.changed, 0);
+    const staleSeen = staleBoundary.reduce((sum, entry) => sum + entry.seen, 0);
+    const staleStatus = staleSeen === 0 ? "skipped" : staleChanged > 0 ? "applied" : "already-applied";
+    patchResults.push({
+      name: "pi-stale-boundary",
+      status: staleStatus,
+      reason: staleSeen === 0 ? "pi-coding-agent bundle not found" : undefined,
+    });
+    if (staleStatus === "skipped") p.log.warn("pi stale-session boundary skipped: pi-coding-agent bundle not found");
+    else p.log.info(`pi stale-session boundary: ${staleStatus}`);
+    const scoutLaunch = await applyScoutChildLaunch(options.agentDir);
+    patchResults.push({ name: "scout-child-launch", status: scoutLaunch.status, reason: scoutLaunch.reason });
+    if (scoutLaunch.status === "skipped") {
+      p.log.warn(`scout child launch skipped: ${scoutLaunch.reason}`);
+    } else {
+      p.log.info(`scout child launch: ${scoutLaunch.status}`);
     }
   }
 

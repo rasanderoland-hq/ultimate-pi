@@ -9,8 +9,14 @@
 import { execFileSync } from "node:child_process";
 
 const PATTERNS = [
+  { name: "Anthropic key", re: /sk-ant-[A-Za-z0-9_-]{20,}/g },
+  { name: "OpenAI project key", re: /sk-proj-[A-Za-z0-9_-]{20,}/g },
+  { name: "Google API key", re: /AIza[0-9A-Za-z_-]{35}/g },
+  { name: "GitHub token", re: /gh[pousr]_[A-Za-z0-9]{36,}/g },
+  { name: "Slack token", re: /xox[abprs]-[A-Za-z0-9-]{10,}/g },
   { name: "OpenAI-style key", re: /sk-[a-zA-Z0-9]{20,}/g },
   { name: "OpenRouter key", re: /sk-or-[a-zA-Z0-9-]{10,}/g },
+  { name: "Tavily key", re: /tvly-[A-Za-z0-9_-]{16,}/g },
   { name: "AWS access key id", re: /AKIA[0-9A-Z]{16}/g },
   { name: "Private key header", re: /-----BEGIN [A-Z ]*PRIVATE KEY-----/g },
   {
@@ -32,8 +38,51 @@ const ALLOWED_BARE_HEX = new Set([
   publicHex("e406d7194f83e1db8228", "ef1d91c6719be5d4437b"),
   publicHex("fac8964e80770c7003d1c8719c08fd83", "4a723eb3fc4ccb1442d5ef3a57429bed"),
   publicHex("4d05e91ce9b1de36c1289a70a40db914", "07bf284d93c6c9a2ae9501166dec3b24"),
+  // pi-cursor 0.5.2 proxy after pi-cursor-mcp-state-0.5.2.patch (SHA-256).
+  publicHex("954befc4e657acf7d892a525105a4d65", "852754223c0d581bc593d9964c597f8c"),
   publicHex("2f8ef422f668e7e8fddfe084f37ebe6e", "e44865ce32c2a981a765bb6c213b2c61"),
   publicHex("e37f908e912ade6eebfc4048e7bc7189", "8597f89f630da9f5c2fca1dd1db45324"),
+  publicHex("663479e235ac247211f64e5d6015995d", "8cff04e33726fc639eaa0b1edfe5e6bb"),
+  publicHex("11502aa5ae65d8b0a8a852c5903fe029", "82e812e3f1b64d3d1eb4bf458f1ec78e"),
+  // Reproduced from npm @schultzp2020/pi-cursor@0.5.2 dist/index.js,
+  // before/after patches/pi-cursor-stale-ctx-0.5.2.patch (SHA-256).
+  publicHex("ac2b0544559910f836e627a8c292ea303", "492b7100174bf0ca3b30a7cab1fa900"),
+  publicHex("180c81c74411948dfed5b41ad441416cd", "d172f69fbae58576bc7b3638204664d"),
+  // Reproduced from npm pi-graft@0.1.2 extensions/graft.ts after the
+  // async + subagent-task patches, then the stale-ctx patch (SHA-256).
+  publicHex("0e80c4207393e90cd862514cc6e4ef3c5", "b0cf925a770f89cc2b32c7b277503a4"),
+  publicHex("0f9002d52221f57fbbcd0bf6d1f5e123f", "94532eed49a9e051efd0bc55cd91f51"),
+  publicHex("db3eef0b520bebaf0afe9457e7013c43", "1676793ea00cf20fdeb5aaf9965e4d1d"),
+  // Reproduced from github.com/amosblomqvist/pi-interactive-subagents
+  // at the pinned commit above: pi-extension/subagents/index.ts, before/after
+  // pi-interactive-subagents-stale-ctx.patch. First pair: git blob ids;
+  // second pair: SHA-256. See patches/README.md for the provenance table.
+  publicHex("7e20a0fcec3a9316eaeb", "a1d6957f1893b18163f7"),
+  publicHex("2266f5a7a8e82aa9c358", "ec39a7dd53420ebf38f1"),
+  publicHex("0a438726c0a9e5bd02d0b87141b41238", "aae7c39ac2faa4f4a96eb0f5e1ecb1a4"),
+  publicHex("96dfdb1d722fcb6a478ccf919aae698b5", "f6f2fe6b770145aeca6acb21f711136"),
+  // Local pi-interactive-subagents index.ts before/after
+  // pi-interactive-subagents-global-model.patch (SHA-256).
+  publicHex("4dd93c7f05b4c8ad0c97ad3fbd92d995", "678edfaf2fc79aa9e24884b880ba0eb9"),
+  publicHex("b27026a706942d8d48deda125833ea53", "871ad56f72532908dcbbe697e9de9b57"),
+  // pi-graft settled-handler stale-ctx post-image, and observational-memory
+  // 0.1.0 observer/consolidator/compaction trigger before/after images.
+  publicHex("e3f2684791d8d44fc909d84a887f5899", "6001307be71bb3fdb10fbead5dfc6bdb"),
+  publicHex("0bfe292de9bfd3e95a48e7499f98401d", "69a07b4e4f77602f9cc27945fbd87db9"),
+  publicHex("f45758d173508b0384447d790531d401", "e29374e78b5472287f081eb67a24f8c0"),
+  publicHex("4594cd243c4a5aff2e11e057dd4b0431", "fd76fc1e6506c0695e57a7bc1229e121"),
+  // observational-memory 0.1.0 upstream commit SHA (patches/README.md provenance table).
+  publicHex("78a1efcfdd46332253fb", "289724f05b26dfc7769e"),
+  publicHex("766634f8364569369ef7d78012363a7a", "a84ac679620b8f6db9436f6dee7dd061"),
+  publicHex("6d3e7abc671d8ed6d0c3706d3d74f027", "7e541038e35d03fadc11b2210edcf2d0"),
+  publicHex("cb757631b32a76f4a49fe6c11d2bde41", "bcd6d3bd172a7857bdc5c7ca0d1f2bc7"),
+]);
+
+// Paperclip skill identifiers used as `key: "..."` in test fixtures. They look
+// like assigned secrets to the pattern above but are public catalog names.
+const ALLOWED_ASSIGNED = new Set([
+  "paperclipai/paperclip/agentmail",
+  "paperclipai/paperclip/pdf-reader",
 ]);
 
 function mask(value) {
@@ -64,6 +113,9 @@ function scanText(label, text, hits) {
       while ((match = pattern.re.exec(line)) !== null) {
         const value = match[1] ?? match[0];
         if (pattern.name === "Bare 40+ hex" && ALLOWED_BARE_HEX.has(value)) {
+          continue;
+        }
+        if (pattern.name === "Assigned secret-like value" && ALLOWED_ASSIGNED.has(value)) {
           continue;
         }
         hits.push({ label, lineNo: i + 1, kind: pattern.name, masked: mask(value) });
